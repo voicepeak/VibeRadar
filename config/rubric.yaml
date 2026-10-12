@@ -1,0 +1,81 @@
+# 品味规则与评分（PRD 第 7 章）。修改须升版本并记录理由。
+schema_version: "1"
+version: "rubric-1.0"
+
+dimensions:
+  creativity:
+    label: 创意度
+    anchors:
+      "1": 常见同类复制，差异不明
+      "3": 老概念有可说明的新组合
+      "5": 有明确证据支持的新交互/新做法
+  playability:
+    label: 可玩性
+    anchors:
+      "1": 准备成本高，核心体验不清
+      "3": 可演示或有限配置后体验
+      "5": 在线入口易触达，已验证核心流程
+  completeness:
+    label: 完成度
+    anchors:
+      "1": 概念或关键功能缺失
+      "3": demo完整但限制明显
+      "5": 关键流程验证可用且限制说明清楚
+  surprise:
+    label: 反直觉
+    anchors:
+      "1": 行为符合常规预期
+      "3": 有新组合或意外结果
+      "5": 有具体可观察的惊喜点
+  niche:
+    label: 生态位
+    anchors:
+      "1": 需求与差异不清
+      "3": 补足某类工作流
+      "5": 针对明确痛点，有可核查价值
+
+interest_formula:
+  type: mean_of_dims_over_25
+  numerator_dims: [creativity, playability, completeness, surprise, niche]
+  divisor: 25
+
+taste_match:
+  weights:
+    creativity: 0.35
+    surprise: 0.25
+    niche: 0.25
+    playability: 0.15
+  divisor: 5
+
+score_formula:
+  source_signal: 0.20
+  velocity: 0.15
+  novelty: 0.25
+  llm_interest: 0.25
+  taste_match: 0.15
+  spam_score: -0.30
+
+bonuses:
+  cross_source_confirmed: 0.03
+  low_heat_creative: 0.03      # 创意≥4 且 interest≥0.7 且 热度分位≤0.25
+  trial_category_preference: 0.02  # 实验分类偏好，默认关闭
+  max_total: 0.08
+low_heat_percentile_max: 0.25
+novelty:
+  half_life_hours: 18           # novelty = exp(-hours_since_event/18)
+  unknown_time_cap: 0.5
+source_signal:
+  min_samples: 5                # n<5 或全相同 → 0.5 并标记缺失
+  missing_default: 0.5
+velocity:
+  min_hours: 1                  # 两次快照相隔 ≥1 小时
+  min_samples: 5
+  missing_default: 0.5
+cross_source_min_sources: 2
+diversity:
+  review_pool_category_max: 8
+  public_single_category_ratio: 0.4
+  public_min_categories: 3
+  same_topic_max: 2
+  same_product_max: 1
+trial_categories: []            # 默认关闭的分类试验偏好

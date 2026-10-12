@@ -1,0 +1,36 @@
+# 分类体系（PRD 4.2）。key 冻结；展示名与描述可更新但必须升版本。
+schema_version: "1"
+categories:
+  - key: coding-agent
+    label: 编码 Agent
+    description: coding agent、harness、多 agent 编排
+  - key: agent-hygiene
+    label: Agent 工作流保障
+    description: 测试、上下文、沙箱、记忆、配额、调试
+  - key: app-builder
+    label: 应用构建
+    description: prompt-to-app、网站与 UI 生成
+  - key: editor-extension
+    label: 编辑器工具
+    description: IDE 插件、会话管理、辅助工具
+  - key: mcp-skill
+    label: MCP 与技能
+    description: server、skill、协议工具
+  - key: infra-model
+    label: 基础设施
+    description: 路由、推理服务、eval；纯模型公告除外
+  - key: creative-toy
+    label: 创意作品
+    description: 趣味优先、游戏、可交互实验
+  - key: meta
+    label: 生态观察
+    description: 人工注释与后续趋势板块，不作产品主分类
+product_category_keys:
+  - coding-agent
+  - agent-hygiene
+  - app-builder
+  - editor-extension
+  - mcp-skill
+  - infra-model
+  - creative-toy
+max_tags_per_product: 3
