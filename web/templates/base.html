@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Vibe Radar · 每日 AI builder 新品精选{% endblock %}</title>
+  <meta name="description" content="{% block description %}每天早上 9 点，给你一份新近发现的 vibe coding 产品精选。{% endblock %}">
+  {% block canonical %}{% endblock %}
+  {% block head %}{% endblock %}
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="brand" href="/">Vibe Radar <span class="brand-sub">振感雷达</span></a>
+      <nav class="site-nav">
+        <a href="/">今日</a>
+        <a href="/saved">收藏</a>
+        <a href="/rss.xml">RSS</a>
+      </nav>
+    </div>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer">
+    <p>中文 AI builder 每日新品策展 · 无账号、匿名反馈 · 收藏仅保存在本浏览器</p>
+    <p class="muted">“玩过了”为读者自报，不代表第三方站内操作已完成。</p>
+  </footer>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

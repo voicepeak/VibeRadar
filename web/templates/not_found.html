@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}未找到 · Vibe Radar{% endblock %}
+{% block content %}
+  <section class="hero">
+    <h1>未找到</h1>
+    <p>{{ message or '你访问的内容不存在。' }}</p>
+    <p><a href="/">返回最近一期</a></p>
+  </section>
+{% endblock %}

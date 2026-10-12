@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ product.name }} · Vibe Radar{% endblock %}
+{% block canonical %}<link rel="canonical" href="{{ settings.site_base_url }}/p/{{ product.slug }}">{% endblock %}
+{% block content %}
+  <section class="edition-head">
+    <p class="item-meta">
+      {% if product.category %}<span class="pill">{{ category_label }}</span>{% endif %}
+      <span class="pill status-{{ product.status }}">{{ product.status | product_status_label }}</span>
+    </p>
+    <h1>{{ product.name }}</h1>
+    {% if product.summary %}<p class="one-liner">{{ product.summary }}</p>{% endif %}
+    {% if product.status == 'retracted' %}
+      <p class="notice">该产品已撤回：{{ product.retraction_note or '入口或信息不可用。' }} 不再承诺可正常试玩。</p>
+    {% endif %}
+    {% if product.canonical_url %}
+      <p><a href="{{ product.canonical_url }}" rel="noopener noreferrer">产品/仓库入口</a></p>
+    {% endif %}
+    <p class="muted small">首次发现：{{ product.first_seen_at | fmt_date }}</p>
+  </section>
+
+  <h2 class="section-title">历史期号</h2>
+  {% if history %}
+    <ul class="history-list">
+      {% for entry in history %}
+        <li>
+          <a href="/d/{{ entry.date.isoformat() }}">{{ entry.date.isoformat() }}</a>
+          <span class="muted">第 {{ entry.position }} 条 · {{ entry.one_liner }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+    <p class="muted small">历史期号保存当期快照；产品当前简介变化不会改写当时的卡片文本。</p>
+  {% else %}
+    <p class="muted">尚未被公开期号收录。</p>
+  {% endif %}
+{% endblock %}

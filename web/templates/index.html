@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "_item_card.html" import item_card %}
+{% from "_recent.html" import recent_list %}
+{% block title %}Vibe Radar · {% if edition %}{{ edition.date.isoformat() }}{% else %}介绍{% endif %}{% endblock %}
+{% block content %}
+  {% if intro_only %}
+    <section class="hero">
+      <h1>Vibe Radar · 振感雷达</h1>
+      <p>每天早上 9 点，给你一份新近发现的 vibe coding 产品精选：它是什么、为什么值得看、怎样最快体验、要付出什么成本。</p>
+      <p class="muted">首个公开期号尚未发布。发布后这里会显示最新一期。</p>
+    </section>
+  {% else %}
+    <section class="edition-head">
+      <h1>
+        {% if is_today %}今日精选{% else %}最近一期{% endif %} · {{ edition.date.isoformat() }}
+        <span class="count-badge">
+          {% if edition.content_status == 'empty' %}暂无推荐
+          {% elif edition.content_status == 'short' %}短刊 {{ edition.items | length }} 条
+          {% else %}{{ edition.items | length }} 条{% endif %}
+        </span>
+      </h1>
+      <p class="intro">{{ edition.intro }}</p>
+      {% if not is_today %}
+        <p class="muted">今日尚未发布，以下为最近一期（{{ edition.date.isoformat() }}），请以日期为准。</p>
+      {% endif %}
+      {% if edition.source_coverage %}
+        <p class="muted">{{ edition.source_coverage }}</p>
+      {% endif %}
+      <p class="muted small">本期永久链接：<a href="/d/{{ edition.date.isoformat() }}">/d/{{ edition.date.isoformat() }}</a></p>
+    </section>
+
+    {% if highlights %}
+      <h2 class="section-title">重点推荐</h2>
+      {% for item in highlights %}
+        {{ item_card(item, settings) }}
+      {% endfor %}
+    {% endif %}
+
+    {% for title, items in sections %}
+      <h2 class="section-title">{{ title }}</h2>
+      {% for item in items %}
+        {{ item_card(item, settings, compact=True) }}
+      {% endfor %}
+    {% endfor %}
+
+    {% if not edition.items %}
+      <section class="card empty-card">
+        <p>本期没有通过质量门槛的条目，未用旧产品冒充今日新品。</p>
+        <p class="muted">可以看看下面的最近期号，或等待下一期。</p>
+      </section>
+    {% endif %}
+
+    {{ recent_list(recent, "最近期号") }}
+  {% endif %}
+{% endblock %}
