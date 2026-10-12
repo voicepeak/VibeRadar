@@ -19,6 +19,32 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 PROJECT_ROOT = Path(os.environ.get("VIBERADAR_ROOT", Path(__file__).resolve().parents[2]))
+
+
+def load_dotenv(path: Path) -> int:
+    """加载 KEY=VALUE 格式的 .env（不覆盖已有环境变量）；返回注入的键数。"""
+    if not path.exists():
+        return 0
+    injected = 0
+    for raw in path.read_text(encoding="utf-8-sig").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if not key or not key.replace("_", "").isalnum() or key[0].isdigit():
+            continue
+        if key not in os.environ:
+            os.environ[key] = value
+            injected += 1
+    return injected
+
+
+load_dotenv(Path(os.environ.get("VIBERADAR_ENV_FILE", PROJECT_ROOT / ".env")))
+
 CONFIG_DIR = Path(os.environ.get("VIBERADAR_CONFIG_DIR", PROJECT_ROOT / "config"))
 DATA_DIR = Path(os.environ.get("VIBERADAR_DATA_DIR", PROJECT_ROOT / "data"))
 

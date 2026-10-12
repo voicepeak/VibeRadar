@@ -8,7 +8,31 @@ from pathlib import Path
 import pytest
 import yaml
 
-from viberadar.settings import PROJECT_ROOT, ConfigError, load_settings
+from viberadar.settings import PROJECT_ROOT, ConfigError, load_dotenv, load_settings
+
+
+def test_load_dotenv_injects_and_does_not_override(tmp_path: Path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "# 注释\n"
+        'VIBERADAR_TEST_NEW_KEY="quoted-value"\n'
+        "export VIBERADAR_TEST_EXPORTED=plain\n"
+        "VIBERADAR_TEST_EXISTING=from-file\n"
+        "BAD LINE WITHOUT EQUALS\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("VIBERADAR_TEST_EXISTING", "from-env")
+    monkeypatch.delenv("VIBERADAR_TEST_NEW_KEY", raising=False)
+    monkeypatch.delenv("VIBERADAR_TEST_EXPORTED", raising=False)
+    injected = load_dotenv(env_file)
+    import os
+
+    assert injected == 2
+    assert os.environ["VIBERADAR_TEST_NEW_KEY"] == "quoted-value"
+    assert os.environ["VIBERADAR_TEST_EXPORTED"] == "plain"
+    assert os.environ["VIBERADAR_TEST_EXISTING"] == "from-env"
+    monkeypatch.delenv("VIBERADAR_TEST_NEW_KEY")
+    monkeypatch.delenv("VIBERADAR_TEST_EXPORTED")
 
 
 @pytest.fixture()
