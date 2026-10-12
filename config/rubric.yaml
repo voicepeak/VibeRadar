@@ -73,8 +73,8 @@ velocity:
   missing_default: 0.5
 cross_source_min_sources: 2
 diversity:
-  review_pool_category_max: 8
-  public_single_category_ratio: 0.4
+  review_pool_category_max: 30      # 宽进策略：8→30（池内不再按分类大幅削减）
+  public_single_category_ratio: 0.6 # 宽进策略：0.4→0.6（放松单分类占比）
   public_min_categories: 3
   same_topic_max: 2
   same_product_max: 1

@@ -384,6 +384,7 @@ def _run(
         auto, reasons = _passes_gates(
             session, entry, classification, dims, outcome, settings, cutoff
         )
+        content["quality_flags"] = reasons
         candidates.append(
             CandidateData(
                 resolved=entry,
@@ -897,38 +898,59 @@ def _passes_gates(
     settings: Settings,
     cutoff: datetime,
 ) -> tuple[bool, list[str]]:
-    """自动入选门槛（PRD 5.3）。"""
-    reasons: list[str] = []
+    """入选判定（宽进策略，quality_gates.mode=soft 为默认）。
+
+    soft：只有“明确排除”（规则判定不相关、spam 超线）与运营性去重
+    （stale 事件、未决实体关系、30 天重复刊登）硬拦截；分类未知、置信度、
+    兴趣、富化、可达性等质量问题降级为质量标记（quality_flags），
+    不阻塞入选，供后续分类模块与人工复核使用。
+    strict：保持 PRD 5.3 全部硬门槛（原行为）。
+    """
     gates = settings.pipeline.quality_gates
+    strict = (getattr(gates, "mode", "soft") or "soft").lower() == "strict"
+    blocked: list[str] = []   # 硬拦截：明确排除 + 运营性去重
+    flags: list[str] = []     # 质量标记：soft 下不拦截
+
+    def mark(message: str) -> None:
+        (blocked if strict else flags).append(message)
+
+    product_keys = set(settings.taxonomy.product_category_keys)
+
     if classification is None:
-        return False, ["无分类结果"]
-    if classification.relevant is not True:
-        reasons.append("相关性未确认")
-    if float(classification.confidence) < gates.min_confidence:
-        reasons.append(f"分类置信度 <{gates.min_confidence}")
-    if float(classification.spam_score) >= gates.max_spam_score:
-        reasons.append("spam 分数过高")
-    if classification.category not in set(settings.taxonomy.product_category_keys):
-        reasons.append("分类不在产品分类内")
+        mark("无分类结果")
+    else:
+        if classification.relevant is False:
+            blocked.append("明确不相关（规则排除）")
+        elif classification.relevant is not True:
+            mark("相关性未确认")
+        if float(classification.confidence) < gates.min_confidence:
+            mark(f"分类置信度 <{gates.min_confidence}")
+        if float(classification.spam_score) >= gates.max_spam_score:
+            blocked.append("spam 分数过高")
+        if classification.category not in product_keys:
+            if strict or classification.category is not None or classification.relevant is True:
+                mark("分类不在产品分类内")
+
     interest = dims.llm_interest() if dims else None
     if interest is None:
-        reasons.append("兴趣维度未知")
+        mark("兴趣维度未知")
     elif interest < gates.min_interest:
-        reasons.append(f"兴趣分 <{gates.min_interest}")
+        mark(f"兴趣分 <{gates.min_interest}")
+
     if entry.exclusion_reason:
-        reasons.append(entry.exclusion_reason)
+        blocked.append(entry.exclusion_reason)
     if entry.event.status != "active":
-        reasons.append("事件已标记 stale")
+        blocked.append("事件已标记 stale")
     if outcome is None or outcome.enrichment is None:
-        reasons.append("无富化结果")
+        mark("无富化结果")
     else:
         if gates.require_reachable and outcome.page is not None and not outcome.page.reachable:
-            reasons.append("入口不可达")
+            mark("入口不可达")
         if outcome.page is None and not entry.raw_item.description:
-            reasons.append("无入口核查记录")
+            mark("无入口核查记录")
     for rel in repo_products.list_pending_relations(session, status="open"):
         if entry.product.id in (rel.product_id_a, rel.product_id_b):
-            reasons.append("存在未决实体关系")
+            blocked.append("存在未决实体关系")
             break
     if was_published_recently(
         session,
@@ -936,5 +958,5 @@ def _passes_gates(
         cutoff,
         settings.pipeline.window.republish_cooldown_days,
     ) and not has_update_event(session, entry.product.id, entry.event.id):
-        reasons.append("30 天内已刊登且无可验证重要更新")
-    return (not reasons), reasons
+        blocked.append("30 天内已刊登且无可验证重要更新")
+    return (not blocked), blocked + flags

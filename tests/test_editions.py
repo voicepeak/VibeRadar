@@ -54,22 +54,22 @@ def seed(session, name: str, auto: bool = True, score: float = 0.8, status: str 
 
 def test_freeze_normal_edition_uses_target(session, temp_settings):
     categories = ["agent-hygiene", "coding-agent", "mcp-skill"]
-    for i in range(8):
+    for i in range(20):
         seed(session, f"P{i}", score=0.9 - i * 0.01, category=categories[i % 3])
     edition = freeze_edition(session, EDITION_DATE, settings=temp_settings, now=NOW)
     items = repo_editions.list_items(session, edition.id, revision=1)
-    assert len(items) == 6  # public_target
+    assert len(items) == 15  # public_target（宽进策略）
     assert edition.content_status == "normal"
-    assert edition.intro.startswith("今日精选 6 条")
+    assert edition.intro.startswith("今日精选 15 条")
     assert items[0].highlight is True and items[1].highlight is True and items[2].highlight is False
 
 
 def test_freeze_short_and_empty(session, temp_settings):
-    for i in range(3):
+    for i in range(2):
         seed(session, f"S{i}")
     edition = freeze_edition(session, EDITION_DATE, settings=temp_settings, now=NOW)
-    assert edition.content_status == "short"
-    assert len(repo_editions.list_items(session, edition.id, revision=1)) == 3
+    assert edition.content_status == "short"  # 少于 public_min（宽进策略：3）
+    assert len(repo_editions.list_items(session, edition.id, revision=1)) == 2
 
     # 空刊：新日期无候选
     edition2 = freeze_edition(session, date(2026, 10, 13), settings=temp_settings, now=NOW)

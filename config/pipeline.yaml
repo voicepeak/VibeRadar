@@ -14,22 +14,26 @@ window:
   late_discovery_days: 7         # 晚发现事件补入上限（PRD 4.3）
   republish_cooldown_days: 30    # 已刊登产品 30 天内再次入选需重要更新
 limits:
-  candidate_limit: 20            # 复核池上限
-  public_target: 6               # 默认条数
-  public_min: 5                  # 低于 5 条发布短刊
-  public_max: 12                 # 人工扩展硬上限
-  deep_enrich_limit: 40          # 深度处理候选/期
+  candidate_limit: 60            # 复核池上限（宽进策略：20→60）
+  public_target: 15              # 默认条数（宽进策略：6→15）
+  public_min: 3                  # 低于 3 条发布短刊（宽进策略：5→3）
+  public_max: 30                 # 人工扩展硬上限（宽进策略：12→30）
+  deep_enrich_limit: 60          # 深度处理候选/期（宽进策略：40→60，覆盖复核池上界）
   strong_model_limit: 12         # 强模型润色上限
   low_heat_explore_quota: 10     # 深度处理内低热度探索名额
   classification_batch: 15       # 轻量模型批量条数（10–20）
   classify_material_chars: 600   # 单条材料截断（中文字符）
 quality_gates:
-  min_confidence: 0.8            # 自动候选分类置信度下限
-  manual_review_confidence: 0.5  # 0.5–0.8 送人工候选
-  max_spam_score: 0.5
-  min_interest: 0.6
-  require_evidence: true
-  require_reachable: true
+  # 宽进策略：mode=soft 时仅保留“明确排除”与运营性去重为硬拦截；
+  # 置信度/兴趣/证据/可达性等质量问题降级为候选上的质量标记（quality_flags），
+  # 供后续分类模块与人工复核使用。mode=strict 恢复 PRD 5.3 全部硬门槛。
+  mode: soft
+  min_confidence: 0.8            # soft 下仅作为质量标记阈值（不拦截）
+  manual_review_confidence: 0.5
+  max_spam_score: 0.5            # 明确排除线（硬拦截）
+  min_interest: 0.6              # soft 下仅作为质量标记阈值（不拦截）
+  require_evidence: true         # soft 下仅作标记；strict 下拦截
+  require_reachable: true        # soft 下仅作标记；strict 下拦截
 rate_limits:
   anonymous_per_minute: 30
   ip_per_minute: 300

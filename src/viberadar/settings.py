@@ -59,6 +59,10 @@ class LimitsConfig(_Model):
 
 
 class QualityGatesConfig(_Model):
+    """质量门槛配置。mode=soft（宽进）：仅“明确排除/运营性去重”硬拦截，
+    其余质量问题降级为候选质量标记；mode=strict：PRD 5.3 全部门槛生效。"""
+
+    mode: str = "soft"
     min_confidence: float = 0.8
     manual_review_confidence: float = 0.5
     max_spam_score: float = 0.5
