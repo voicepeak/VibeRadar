@@ -45,6 +45,7 @@ def build_selection(
 ) -> SelectionResult:
     """冻结时应用人工修订层；硬门槛（证据、来源、可访问）不可被人为绕过。"""
     settings = settings or get_settings()
+    strict = (getattr(settings.pipeline.quality_gates, "mode", "soft") or "soft").lower() == "strict"
     candidates = repo_pipeline.list_candidates(session, edition_date)
     notes: list[str] = []
 
@@ -60,7 +61,13 @@ def build_selection(
         if candidate.product_id in seen or candidate.product_id in rejected_ids:
             return False
         content = candidate.content_json or {}
-        if content.get("evidence_status") not in REQUIRED_EVIDENCE:
+        evidence_status = content.get("evidence_status")
+        # 宽进策略：仅“入口实测失败”硬拦截；未核查（unverified）放行但保留注释。
+        # strict 模式恢复 E06：evidence_status 必须属于 REQUIRED_EVIDENCE。
+        if evidence_status == "failed":
+            notes.append(f"{candidate.product_id}: 跳过（入口实测失败）")
+            return False
+        if strict and evidence_status not in REQUIRED_EVIDENCE:
             notes.append(f"{candidate.product_id}: 跳过（无证据，硬门槛，E06）")
             return False
         if not content.get("source_links"):
