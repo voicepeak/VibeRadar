@@ -1,0 +1,57 @@
+# 信源接入配置（PRD 附录 B）。版本文件不含 secret。
+schema_version: "1"
+sources:
+  hn:
+    key: hn
+    label: Hacker News (Show HN)
+    tier: 1
+    enabled: true
+    adapter: hn
+    license_note: Algolia 索引查询服务；按公开 API 使用
+    config:
+      endpoint: https://hn.algolia.com/api/v1/search_by_date
+      tags: show_hn
+      hits_per_page: 100
+      max_pages: 10
+      request_timeout_seconds: 20
+  github:
+    key: github
+    label: GitHub 新仓库
+    tier: 1
+    enabled: true
+    adapter: github
+    license_note: GitHub REST API；token 最小权限只读公开内容
+    config:
+      endpoint: https://api.github.com/search/repositories
+      per_page: 100
+      max_pages: 5               # 单查询最多 1000 条结果
+      request_timeout_seconds: 20
+      queries:
+        - query_key: vibecoding
+          q: "vibe coding created:>={since_date}"
+        - query_key: ai-agent
+          q: "topic:ai-agent created:>={since_date}"
+        - query_key: llm-tooling
+          q: "topic:llm topic:developer-tools created:>={since_date}"
+        - query_key: mcp
+          q: "topic:mcp created:>={since_date}"
+        - query_key: coding-agent
+          q: "topic:coding-agent created:>={since_date}"
+  manual:
+    key: manual
+    label: 人工注入
+    tier: 1
+    enabled: true
+    adapter: manual
+    license_note: 人工整理公开链接；须通过抓取边界检查
+    config: {}
+  producthunt:
+    key: producthunt
+    label: Product Hunt
+    tier: 2
+    enabled: false               # 凭据与条款核查通过后启用（PRD 3.1）
+    adapter: producthunt
+    license_note: 商业用途须先联系平台；token 持有不等于用途许可
+    config:
+      endpoint: https://api.producthunt.com/v2/api/graphql
+      request_timeout_seconds: 20
