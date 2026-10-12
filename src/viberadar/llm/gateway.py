@@ -68,6 +68,7 @@ class LLMGateway:
         self.settings = settings or get_settings()
         self._transport = transport
         self.profile: LLMProfile | None = profile
+        self.config = None
         self.provider = self._resolve_provider(provider)
         self.client: LLMClient | None = (
             LLMClient(self.profile, transport=transport) if self.profile else None
@@ -90,6 +91,7 @@ class LLMGateway:
 
         store = load_store(self.settings)
         config = store.load_optional()
+        self.config = config
         if choice == "config":
             if config is None or not config.profiles:
                 raise ConfigError("provider=config 但未找到 data/llm.json 档案；请先在配置窗口或 CLI 创建")
@@ -120,6 +122,22 @@ class LLMGateway:
         if tier_or_model in DEFAULT_TIER_MODELS:
             return DEFAULT_TIER_MODELS[tier_or_model]
         return tier_or_model
+
+    def stage_tier_override(self, stage: str | None) -> str | None:
+        """配置窗口里的阶段映射；未显式配置时返回 None（保持调用方档位）。"""
+        if self.config is None or not stage:
+            return None
+        stages = self.config.stages or {}
+        value = stages.get(stage) or stages.get("default")
+        return value if value in ("fast", "strong") else None
+
+    def resolve_model(self, model: str, stage: str | None = None) -> str:
+        tier = model
+        if model in DEFAULT_TIER_MODELS:
+            override = self.stage_tier_override(stage)
+            if override is not None:
+                tier = override
+        return self.model_for(tier)
 
     # ---------- 预算 ----------
 
@@ -168,7 +186,7 @@ class LLMGateway:
         temperature: float = 0.0,
     ) -> LLMResult:
         rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-        resolved_key = self.model_for(model)
+        resolved_key = self.resolve_model(model, stage)
         digest = prompt_digest([prompt_name, resolved_key, system, rendered])
 
         with self._session_factory() as session:
@@ -236,7 +254,7 @@ class LLMGateway:
         mock_response: dict | None = None,
     ) -> LLMResult:
         """通用原始对话（HTTP 端点与外部工具）：不做 schema 校验，只保证 JSON 可解析。"""
-        resolved_key = self.model_for(model)
+        resolved_key = self.resolve_model(model, stage)
         digest = prompt_digest(["raw", resolved_key, "json" if json_mode else "text", system, user])
         with self._session_factory() as session:
             cached = repo_ops.cache_get(session, digest)

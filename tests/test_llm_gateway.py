@@ -185,6 +185,37 @@ def test_gateway_raw_chat_json_and_text(session_factory, temp_settings):
     assert text_result.ok and text_result.text == "纯文本回复"
 
 
+def test_gateway_stage_mapping_overrides_tier(session_factory, temp_settings):
+    store = load_store(temp_settings)
+    store.save(
+        LLMConfig(
+            active="work",
+            profiles={
+                "work": LLMProfile(
+                    name="work",
+                    protocol="openai",
+                    base_url="https://llm.test/v1",
+                    api_key="sk-test",
+                    model_fast="m-fast",
+                    model_strong="m-strong",
+                )
+            },
+            stages={"enrich": "fast"},
+        )
+    )
+    gateway = LLMGateway(
+        session_factory, temp_settings, provider="config", transport=_transport()
+    )
+    overridden = gateway.chat_json(
+        prompt_name="guide", system="s", payload={"x": 1}, model="strong", stage="enrich"
+    )
+    assert overridden.model == "m-fast"
+    untouched = gateway.chat_json(
+        prompt_name="classify", system="s", payload={"x": 1}, model="strong", stage="classify"
+    )
+    assert untouched.model == "m-strong"
+
+
 def test_gateway_unpriced_model_records_zero_cost(session_factory, temp_settings):
     store = load_store(temp_settings)
     store.save(

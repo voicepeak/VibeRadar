@@ -818,10 +818,17 @@ def _cmd_llm(args, settings: Settings) -> int:
                 f"{profile.model_fast or '-'} / {profile.model_strong or '-'} | {key_state}"
             )
         stages = config.stages or {}
+        parts = []
+        for stage in ("classify", "interest", "enrich", "compose", "api"):
+            explicit = stages.get(stage) or stages.get("default")
+            if explicit:
+                suffix = "" if stages.get(stage) else "(default)"
+                parts.append(f"{stage}={explicit}{suffix}")
+            else:
+                parts.append(f"{stage}=预设")
         print(
-            "阶段映射："
-            + "；".join(f"{s}={config.stage_tier(s)}" for s in ("classify", "interest", "enrich", "compose", "api"))
-            + (f"（default={stages.get('default')}）" if stages.get("default") else "")
+            "阶段映射：" + "；".join(parts)
+            + "（预设：classify/interest/api=fast，enrich/compose=strong）"
         )
         return EXIT_OK
 
