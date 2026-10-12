@@ -87,7 +87,7 @@
 py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 
-# 2) 运行测试（154 项：契约/单元/集成/验收）
+# 2) 运行测试（158 项：契约/单元/集成/验收）
 .\.venv\Scripts\python.exe -m pytest tests -q
 
 # 3) 人工注入两条候选并跑一条端到端管线（离线 mock LLM）
@@ -113,7 +113,7 @@ python -m viberadar llm set --name work --preset deepseek --api-key sk-...
 python -m viberadar llm use --name work
 python -m viberadar llm test --name work        # 一次最小连通性调用
 
-# 方式二：配置窗口（浏览器）http://127.0.0.1:8000/admin/llm （需 VIBERADAR_ADMIN_TOKEN）
+# 方式二：配置窗口（浏览器）http://127.0.0.1:8000/admin/llm ，直接填 API Key，无需任何令牌/环境变量
 
 # 或旧式环境变量直连 DeepSeek
 $env:VIBERADAR_LLM_PROVIDER="deepseek"; $env:DEEPSEEK_API_KEY="..."
@@ -132,10 +132,11 @@ $env:VIBERADAR_LLM_PROVIDER="deepseek"; $env:DEEPSEEK_API_KEY="..."
 - 阶段映射：`classify/interest` 默认 fast，`enrich/compose` 默认 strong；可在窗口或
   `viberadar llm stage --stage enrich --tier strong` 调整。
 - 复用方式：`from viberadar.llm import LLMClient` 直接调用；其他语言/工具走
-  `POST /api/llm/chat`（`X-Admin-Token` 或 `Bearer VIBERADAR_LLM_API_TOKEN`，共享缓存、预算与成本账本）。
+  `POST /api/llm/chat`（本机直连免令牌；远程调用需 `VIBERADAR_LLM_API_TOKEN`，共享缓存、预算与成本账本）。
 - 预算与成本：延续日/月硬上限；档案 `price` 缺省时可回退 `config/pricing.yaml`，都未定价则成本记 0
   并在状态中标注，不阻塞调用。
-- 安全：管理页与 `/api/admin/*` 仅本机使用（Caddy 已 404）；`/api/llm/*` 需令牌。
+- 安全：设置页 `/admin/llm` 与 `/api/admin/*` 默认开放（本地工具），公网部署由 Caddy 统一 404
+  `/admin/*`、`/api/admin/*`；`/api/llm/*` 本机直连免令牌、远程需令牌。
 
 ```powershell
 python -m viberadar llm list                 # 档案、激活项与阶段映射
@@ -143,7 +144,7 @@ python -m viberadar llm presets              # 内置预设（deepseek/openai/an
 python -m viberadar llm set --name kimi --preset moonshot --api-key sk-...
 python -m viberadar llm test --name kimi     # 连通性测试
 curl -X POST http://127.0.0.1:8000/api/llm/chat `
-  -H "X-Admin-Token: $env:VIBERADAR_ADMIN_TOKEN" -H "Content-Type: application/json" `
+  -H "Content-Type: application/json" `
   -d '{"system":"你是助手","user":"用一个词回答：连通正常吗？","json_mode":false}'
 ```
 

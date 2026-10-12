@@ -29,7 +29,7 @@ python -m viberadar <命令>          # 或已安装后直接 viberadar
 python -m viberadar pipeline --llm none   # 离线规则模式
 python -m viberadar serve --port 8000
 python -m viberadar scheduler       # 或 scheduler --once（任务计划）
-python -m pytest tests -q           # 154 项测试
+python -m pytest tests -q           # 158 项测试
 ```
 
 默认 `VIBERADAR_LLM_PROVIDER=auto`：存在 `data/llm.json` 档案时启用真实模型，否则离线 mock
@@ -49,9 +49,10 @@ PRD 10.1 以 DeepSeek 为唯一模型来源；本次扩展在不改变管线契�
   模型 `price` 缺省时回退 `pricing.yaml`，均未定价则成本记 0 并标注（`price_version=unpriced`）。
 - 管线接线：分类/兴趣/指南改用档位名；`freeze_edition` 增加 LLM 开场白（compose prompt），
   `item_ids` 与输入不一致或失败时回退模板；调度任务（cutoff/freeze）按配置自动注入 Gateway。
-- 复用出口：`POST /api/llm/chat`（令牌保护，共享缓存与预算）与 `GET /api/llm/status`；
-  管理面 `GET /admin/llm`、`GET/PUT /api/admin/llm/config`、`POST /api/admin/llm/test`、
-  `DELETE /api/admin/llm/profiles/{name}`；Caddy 已把 `/admin/*`、`/api/admin/*` 从公网 404。
+- 复用出口：`POST /api/llm/chat`（本机直连免令牌、远程需 VIBERADAR_LLM_API_TOKEN，共享缓存与预算）与
+  `GET /api/llm/status`；管理面 `GET /admin/llm`（`/settings`、`/admin` 重定向）、
+  `GET/PUT /api/admin/llm/config`、`POST /api/admin/llm/test`、`DELETE /api/admin/llm/profiles/{name}`，
+  默认开放、不依赖环境变量；Caddy 已把 `/admin/*`、`/api/admin/*` 从公网 404。
 
 
 ## 附录 E 验收场景覆盖
@@ -126,4 +127,4 @@ python tools/qa_frontend.py         # Playwright：桌面 + 360px，46 项断言
 4. `review` 交互为终端问答式（支持 j/k/a/r/e/l/u/s 键位），非全屏 TUI；满足 P0 CLI 要求。
 5. `eval` 提供数据集完整性与 recall/precision 快检，不是完整评测报告；门槛比较结果随样本版本记录。
 6. 未定价模型成本记 0（标注 `unpriced`），预算上限只覆盖已定价模型；可在档案或 `pricing.yaml` 补价。
-7. `/api/llm/chat` 与配置窗口为内部工具面，公网部署请保持管理路径 404（Caddy 默认）并轮换令牌。
+7. `/api/llm/chat` 为内部工具面：本机直连免令牌，远程需要令牌；公网部署保持管理路径 404（Caddy 默认）。
