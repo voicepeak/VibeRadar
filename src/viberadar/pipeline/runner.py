@@ -48,7 +48,7 @@ from viberadar.store.models import (
 )
 
 from .classify import classify_items
-from .enrich import EnrichOutcome, enrich_product
+from .enrich import EnrichOutcome, clip_summary, enrich_product
 from .entities import (
     ResolvedItem,
     has_update_event,
@@ -883,8 +883,8 @@ def _card_content(
             "name": entry.product.name,
             "category": category,
             "category_label": label,
-            "one_liner": (entry.raw_item.description or entry.product.name)[:40],
-            "why_interesting": (entry.raw_item.description or "等待补充证据")[:160],
+            "one_liner": clip_summary(entry.raw_item.description or entry.product.name, 40),
+            "why_interesting": clip_summary(entry.raw_item.description or "等待补充证据", 160),
             "user_story": "",
             "mode": "setup",
             "steps": [],

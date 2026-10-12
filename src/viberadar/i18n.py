@@ -162,6 +162,10 @@ MESSAGES: dict[str, dict[str, str]] = {
         "fallback.step.open": "打开入口页面",
         "fallback.step.open_url": "打开入口页面：{url}",
         "fallback.step.readme": "阅读 README 的安装与运行说明",
+        "fallback.step.readme_no_command": "阅读 README 的安装与运行说明（未检测到明确命令）",
+        "fallback.step.command": "按文档执行：{command}",
+        "fallback.step.after_command": "启动后按 README 的 Quick Start / Usage 章节操作",
+        "fallback.step.demo_self": "页面自述：{text}",
         "fallback.step.run": "按文档完成本地安装后启动",
         "fallback.step.limits": "准备时间未验证，安装前确认平台与依赖",
         "fallback.step.demo_watch": "查看公开演示或截图中呈现的核心效果",
@@ -315,6 +319,10 @@ MESSAGES: dict[str, dict[str, str]] = {
         "fallback.step.open": "Open the entry page",
         "fallback.step.open_url": "Open the entry page: {url}",
         "fallback.step.readme": "Follow the README to install and run",
+        "fallback.step.readme_no_command": "Follow the README to install and run (no explicit command detected)",
+        "fallback.step.command": "Run per the docs: {command}",
+        "fallback.step.after_command": "Then follow the README Quick Start / Usage section",
+        "fallback.step.demo_self": "From the page: {text}",
         "fallback.step.run": "Start it locally and try the first example",
         "fallback.step.limits": "Setup time is unverified; check platforms and requirements first",
         "fallback.step.demo_watch": "Watch the public demo or screenshots",
@@ -466,7 +474,13 @@ def _pure_value(value, locale: str) -> bool:  # noqa: ANN001
     return False
 
 
-def default_steps(mode: str, locale: str, url: str | None) -> list[str]:
+def default_steps(
+    mode: str,
+    locale: str,
+    url: str | None,
+    command: str | None = None,
+    self_description: str | None = None,
+) -> list[str]:
     locale = normalize_locale(locale)
     mode = mode if mode in _MODE_VALUES else "setup"
     opened = (
@@ -475,16 +489,26 @@ def default_steps(mode: str, locale: str, url: str | None) -> list[str]:
         else translate(locale, "fallback.step.open")
     )
     if mode == "setup":
-        return [
-            opened,
-            translate(locale, "fallback.step.readme"),
-            translate(locale, "fallback.step.run"),
-            translate(locale, "fallback.step.limits"),
-        ]
+        if command:
+            middle = [
+                translate(locale, "fallback.step.command", command=command),
+                translate(locale, "fallback.step.after_command"),
+            ]
+        else:
+            middle = [
+                translate(locale, "fallback.step.readme_no_command"),
+                translate(locale, "fallback.step.run"),
+            ]
+        return [opened, *middle, translate(locale, "fallback.step.limits")]
     if mode == "demo":
+        second = (
+            translate(locale, "fallback.step.demo_self", text=self_description)
+            if self_description
+            else translate(locale, "fallback.step.demo_watch")
+        )
         return [
             opened,
-            translate(locale, "fallback.step.demo_watch"),
+            second,
             translate(locale, "fallback.step.demo_compare"),
             translate(locale, "fallback.step.demo_gate"),
         ]

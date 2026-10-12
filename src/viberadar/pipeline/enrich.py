@@ -115,6 +115,10 @@ class _TextExtractor(HTMLParser):
     def text(self) -> str:
         return re.sub(r"\s+", " ", " ".join(self.text_parts)).strip()
 
+    @property
+    def chunks(self) -> list[str]:
+        return list(self.text_parts)
+
 
 @dataclass
 class PageContent:
@@ -125,6 +129,7 @@ class PageContent:
     title: str | None = None
     description: str | None = None
     text: str = ""
+    chunks: list[str] = field(default_factory=list)
     error: str | None = None
     login_wall: bool = False
 
@@ -176,6 +181,7 @@ def fetch_page(url: str, transport=None, resolve_dns: bool = False, timeout: flo
         title=parser.title,
         description=parser.meta.get("description") or parser.meta.get("og:description"),
         text=text[:20_000],
+        chunks=parser.chunks,
         login_wall=login_wall,
     )
 
@@ -260,6 +266,86 @@ def _excerpt(text: str) -> str:
     return flat[:EXCERPT_LIMIT]
 
 
+_HARD_BOUNDARY = "。！？；"
+_SOFT_BOUNDARY = "，、,;"
+
+
+def clip_summary(text: str, limit: int = 40) -> str:
+    """按句读边界压缩到 limit 字以内，避免半句/半词截断。
+
+    优先在硬边界（句号/问号/叹号/分号）收尾，其次软边界（逗号/顿号），
+    英文退到空白边界防止截断单词；截断一律以省略号收尾且不会超出 limit。
+    """
+    flat = re.sub(r"\s+", " ", (text or "")).strip()
+    if not flat:
+        return ""
+    if len(flat) <= limit:
+        return flat
+
+    window = flat[: limit - 1]
+    min_use = max(1, limit // 2)
+    hard = -1
+    soft = -1
+    for i in range(len(window) - 1, -1, -1):
+        ch = window[i]
+        if ch in _SOFT_BOUNDARY and soft == -1:
+            soft = i + 1
+        if ch in _HARD_BOUNDARY:
+            hard = i + 1
+            break
+        if ch in ".!?":
+            # 英文句点需后跟空格才算句界，避免把 3.5 / v1.2 误判为句尾
+            if i + 1 < len(flat) and flat[i + 1] == " ":
+                hard = i + 1
+                break
+    boundary = hard if hard > 0 else soft
+    if boundary >= min_use:
+        return window[:boundary].rstrip(" ,;:，、；：") + "…"
+    space = window.rfind(" ")
+    if space >= min_use:
+        return window[:space].rstrip(" ,;:") + "…"
+    return window.rstrip() + "…"
+
+
+_COMMAND_PATTERNS = [
+    re.compile(r"git clone\s+https?://\S+"),
+    re.compile(r"curl\s+-\S*\s*\S+\s*\|\s*(?:sudo\s+)?(?:sh|bash)"),
+    re.compile(r"docker\s+compose\s+up\b[^|]{0,48}"),
+    re.compile(r"docker\s+run\b[^|]{0,72}"),
+    re.compile(r"(?:npm|pnpm|yarn|bun)\s+(?:install|i|create|add|run|dev|start)\b[^|]{0,48}"),
+    re.compile(r"(?:pip3?|uv)\s+(?:install|sync|run|add|pip\s+install)\b[^|]{0,48}"),
+    re.compile(r"cargo\s+(?:install|build|run)\b[^|]{0,48}"),
+    re.compile(r"go\s+(?:install|build|run)\s+\S+"),
+    re.compile(r"npx\s+[^\s|]{2,60}"),
+    re.compile(r"brew\s+install\s+[^\s|]{2,48}"),
+    re.compile(r"make\s+(?:install|run|dev|serve)\b"),
+]
+_COMMAND_MAX = 80
+
+
+def extract_install_command(chunks: list[str]) -> str | None:
+    """从页面文本块中提取一条可直接执行的安装/运行命令（按出现顺序取首个）。
+
+    仅接受简洁的单行命令形态；长散文句中被提及的命令词不视为命令，
+    避免把“你可以用 npm install…”整句误当步骤。
+    """
+    for chunk in chunks:
+        flat = re.sub(r"\s+", " ", chunk).strip()
+        if not flat or len(flat) > 240:
+            continue
+        for pattern in _COMMAND_PATTERNS:
+            match = pattern.search(flat)
+            if not match:
+                continue
+            command = re.sub(r"\s+", " ", match.group(0)).strip()
+            command = command.rstrip("`'\"”’。，,.;:)")
+            if len(command) > _COMMAND_MAX:
+                command = command[:_COMMAND_MAX].rstrip(" ,;:-")
+            if len(command) >= 4:
+                return command
+    return None
+
+
 def create_evidence(
     session: Session,
     raw: RawItemRow,
@@ -283,20 +369,6 @@ def create_evidence(
     return evidence
 
 
-def _short(text: str, limit: int) -> str:
-    """按标点/词边界截断，避免出现半个英文单词。"""
-    flat = re.sub(r"\s+", " ", text or "").strip()
-    if len(flat) <= limit:
-        return flat
-    cut = flat[:limit]
-    for sep in ("。", "！", "？", "；", "，", ". ", "! ", "? ", "; ", ", ", " "):
-        idx = cut.rfind(sep)
-        if idx >= int(limit * 0.55):
-            cut = cut[:idx]
-            break
-    return cut.rstrip("，,、;；:：- ").strip()
-
-
 def _category_label(product: ProductRow, settings: Settings | None) -> str:
     settings = settings or get_settings()
     category = product.category or ""
@@ -309,6 +381,7 @@ def _template_copy(
     mode: TryMode,
     entry: str,
     label: str,
+    page: PageContent | None = None,
 ) -> tuple[str, str, str, list[str], CardCopyEn]:
     """生成中英两套模板文案；除产品名/URL 外不混排语言。"""
     base = re.sub(r"\s+", " ", (raw.description or "").strip()) or (
@@ -317,8 +390,8 @@ def _template_copy(
     base_is_zh = has_cjk(base)
 
     if base_is_zh:
-        zh_one = _short(base, 40) or fallback_one_liner("zh", label)
-        zh_why = _short(base, 160) or fallback_why("zh", label)
+        zh_one = clip_summary(base, 40) or fallback_one_liner("zh", label)
+        zh_why = clip_summary(base, 160) or fallback_why("zh", label)
         zh_story = fallback_user_story("zh", mode.value, label)
     else:
         zh_one = fallback_one_liner("zh", label)
@@ -326,16 +399,42 @@ def _template_copy(
         zh_story = fallback_user_story("zh", mode.value, label)
 
     if base and not base_is_zh:
-        en_one = _short(base, 80)
-        en_why = _short(base, 160)
+        en_one = clip_summary(base, 80)
+        en_why = clip_summary(base, 160)
         en_story = fallback_user_story("en", mode.value, label)
     else:
         en_one = fallback_one_liner("en", label)
         en_why = fallback_why("en", label)
         en_story = fallback_user_story("en", mode.value, label)
 
-    zh_steps = default_steps(mode.value, "zh", entry or None)
-    en_steps = default_steps(mode.value, "en", entry or None)
+    command = extract_install_command(page.chunks if page is not None else [])
+    self_description = (
+        clip_summary(page.description, 50)
+        if page is not None and page.description
+        else None
+    )
+    zh_steps = default_steps(
+        mode.value,
+        "zh",
+        entry or None,
+        command=command,
+        self_description=(
+            self_description
+            if self_description and has_cjk(self_description)
+            else None
+        ),
+    )
+    en_steps = default_steps(
+        mode.value,
+        "en",
+        entry or None,
+        command=command,
+        self_description=(
+            self_description
+            if self_description and not has_cjk(self_description)
+            else None
+        ),
+    )
     en = CardCopyEn(
         one_liner=en_one or product.name[:80],
         why_interesting=en_why,
@@ -352,12 +451,13 @@ def template_enrichment(
     mode: TryMode,
     evidence_ids: list[str],
     settings: Settings | None = None,
+    page: PageContent | None = None,
 ) -> Enrichment:
     """确定性模板：只使用已抓取事实；中英双语，无依据的字段保持 unknown/未验证。"""
     label = _category_label(product, settings)
     entry = raw.target_url or raw.source_url or ""
     zh_one, zh_why, zh_story, zh_steps, en = _template_copy(
-        product, raw, mode, entry, label
+        product, raw, mode, entry, label, page
     )
 
     claims: list[Claim] = []
@@ -472,7 +572,7 @@ def enrich_product(
 
     access = infer_access(page, raw)
     mode = decide_mode(raw, page)
-    enrichment = template_enrichment(product, raw, access, mode, evidence_ids, settings)
+    enrichment = template_enrichment(product, raw, access, mode, evidence_ids, settings, page=page)
 
     if page is not None and not page.reachable:
         enrichment = enrichment.model_copy(
