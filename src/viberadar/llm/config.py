@@ -20,7 +20,7 @@ from viberadar.settings import ConfigError, Settings
 PROTOCOLS = ("openai", "anthropic")
 TIERS = ("fast", "strong")
 STAGES = ("classify", "interest", "enrich", "compose", "api", "default")
-DEFAULT_TIER_MODELS = {"fast": "deepseek-flash", "strong": "deepseek-pro"}
+DEFAULT_TIER_MODELS = {"fast": "deepseek-chat", "strong": "deepseek-reasoner"}
 
 
 class _Model(BaseModel):

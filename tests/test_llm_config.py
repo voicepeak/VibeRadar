@@ -92,3 +92,9 @@ def test_stage_mapping_defaults():
     assert config.stage_tier("classify") == "fast"
     assert profile.model_for("fast") == "deepseek-chat"
     assert profile.model_for("explicit-model") == "explicit-model"
+
+
+def test_default_tier_models_match_official_ids():
+    bare = LLMProfile(name="x", protocol="openai", base_url="https://api.deepseek.com")
+    assert bare.model_for("fast") == "deepseek-chat"
+    assert bare.model_for("strong") == "deepseek-reasoner"

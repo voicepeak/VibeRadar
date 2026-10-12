@@ -6,6 +6,19 @@ currency: USD
 providers:
   deepseek:
     models:
+      # 正式模型 ID（旧字段名 deepseek-flash / deepseek-pro 保留兼容）
+      deepseek-chat:
+        input: 0.15
+        cache_input: 0.075
+        output: 0.6
+        input_high: 0.3
+        output_high: 1.2
+      deepseek-reasoner:
+        input: 0.66
+        cache_input: 0.33
+        output: 1.98
+        input_high: 1.32
+        output_high: 3.96
       deepseek-flash:
         input: 0.15
         cache_input: 0.075
