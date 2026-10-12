@@ -1,0 +1,5 @@
+任务：按五维rubric评估证据支持的产品体验；材料不含票数和star。
+每维0..5，给证据ID与一句理由；不足时该维为null并说明。
+输出：{item_id,dims:{creativity,playability,completeness,
+       surprise,niche},evidence_refs,why,needs_review}
+注意：最终interest由程序计算，不在模型里自定算法。

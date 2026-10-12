@@ -1,0 +1,26 @@
+# 模型价格与预算（PRD 13.1，2026-10-11 核查的 DeepSeek 官方价）。
+# 价格与时段可变；部署时重新核查并存价格版本。单位：美元 / 百万 token。
+schema_version: "1"
+checked_at: "2026-10-11"
+currency: USD
+providers:
+  deepseek:
+    models:
+      deepseek-flash:
+        input: 0.15
+        cache_input: 0.075
+        output: 0.6
+        input_high: 0.3
+        output_high: 1.2
+      deepseek-pro:
+        input: 0.66
+        cache_input: 0.33
+        output: 1.98
+        input_high: 1.32
+        output_high: 3.96
+    price_page: https://api-docs.deepseek.com/quick_start/pricing/
+budget:
+  daily_optimize_usd: 0.1       # 常规优化目标
+  daily_alert_usd: 0.5          # 告警
+  daily_hard_cap_usd: 2.0       # 停止新增模型调用
+  monthly_hard_cap_usd: 30.0

@@ -1,0 +1,8 @@
+任务：基于已核查证据生成中文卡片。
+输出one_liner<=40字、why_interesting、mode(direct/demo/setup)、
+steps最多4项、access结构、claims[{text,evidence_ids}]。
+步骤写“打开哪里、第一步、看什么、限制”。
+没有免费/登录/平台证据时对应字段为unknown/null。
+未经实际体验记录不能写“已实测”或“30秒完成安装”。
+输入：product、event、access_evidence、verification、evidence[]。
+输出JSON必须符合Enrichment schema；无需额外文本。

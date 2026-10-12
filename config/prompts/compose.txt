@@ -1,0 +1,7 @@
+任务：对程序已决定的卡片顺序生成简短中文开场与分组标题。
+输入：edition_date、content_status、selected_items、source_coverage。
+只使用给定卡片和事实，不新增或替换候选，不改变排名、费用或限制。
+normal/short写“今日精选N条”；empty写“今日暂无通过核验的推荐”。
+degraded补充简短覆盖提示，不把故障日志展示给读者。
+输出：{intro,sections,item_ids}；item_ids必须与输入完全一致。
+最终发布由程序质量检查和状态机控制，模型不能独自决定停刊/发送。

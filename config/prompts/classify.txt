@@ -1,0 +1,7 @@
+任务：依据收录规则和taxonomy，对每个输入条目判断相关性。
+禁止把新账号、低票数、自我发布本身视为spam。
+只有明确证据才能提高spam_score；不猜测刷票曲线。
+输入：rules、taxonomy、items[{item_id,title,description,evidence[]}]
+输出：results[{item_id,relevant,category,confidence,spam_score,
+              reason,evidence_ids,needs_review}]
+要求：输入与输出ID一一对应；分值0..1；category只取允许值。
