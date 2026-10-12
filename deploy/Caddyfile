@@ -1,0 +1,32 @@
+# Caddy：HTTPS + 静态归档 + 反代 FastAPI（仅公开读者 API 与静态站）。
+# 将 example.com 替换为实际域名；本地开发可改为 :8080。
+example.com {
+	encode zstd gzip
+
+	# 已发布的静态快照优先（publish 时导出到 public/d/）
+	handle /d/* {
+		root * /var/lib/viberadar/public
+		file_server
+	}
+	handle /rss.xml {
+		root * /var/lib/viberadar/public
+		file_server
+	}
+	handle {
+		reverse_proxy web:8000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+	}
+}

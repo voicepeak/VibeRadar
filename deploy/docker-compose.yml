@@ -1,0 +1,37 @@
+# 单实例部署：Web + Scheduler 分进程，SQLite 持久卷，Caddy 提供 HTTPS 与静态站。
+# APScheduler 仅运行在 scheduler 容器中（不在每个 Web 进程内各开一个）。
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    env_file: [.env]
+    volumes:
+      - viberadar-data:/var/lib/viberadar
+    expose: ["8000"]
+
+  scheduler:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    env_file: [.env]
+    volumes:
+      - viberadar-data:/var/lib/viberadar
+    command: ["python", "-m", "viberadar", "scheduler"]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - viberadar-data:/var/lib/viberadar:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  viberadar-data:
+  caddy-data:
+  caddy-config:
