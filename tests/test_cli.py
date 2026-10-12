@@ -60,3 +60,35 @@ def test_parser_commands_exist():
     assert args.command == "status"
     args = parser.parse_args(["pipeline", "--date", "2026-10-12", "--llm", "none"])
     assert args.llm == "none"
+    args = parser.parse_args(["llm", "stage", "--stage", "enrich", "--tier", "strong"])
+    assert args.llm_command == "stage" and args.tier == "strong"
+
+
+def test_llm_cli_set_use_stage_list_remove(tmp_path, monkeypatch, capsys):
+    import json
+
+    config_path = tmp_path / "llm.json"
+    monkeypatch.setenv("VIBERADAR_LLM_CONFIG", str(config_path))
+
+    assert main(["llm", "set", "--name", "work", "--preset", "deepseek", "--api-key", "sk-1234567890"]) == EXIT_OK
+    assert main(["llm", "use", "--name", "work"]) == EXIT_OK
+    assert main(["llm", "stage", "--stage", "enrich", "--tier", "strong"]) == EXIT_OK
+    capsys.readouterr()
+
+    assert main(["llm", "list"]) == EXIT_OK
+    listed = capsys.readouterr().out
+    assert "* work" in listed
+    assert "enrich=strong" in listed
+
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["active"] == "work"
+    assert saved["stages"]["enrich"] == "strong"
+    assert saved["profiles"]["work"]["api_key"] == "sk-1234567890"
+    assert saved["profiles"]["work"]["model_fast"] == "deepseek-chat"
+
+    assert main(["llm", "show", "--name", "work"]) == EXIT_OK
+    shown = capsys.readouterr().out
+    assert "sk-1234567890" not in shown and "sk-1" in shown
+
+    assert main(["llm", "remove", "--name", "work"]) == EXIT_OK
+    assert main(["llm", "show"]) == EXIT_ERROR

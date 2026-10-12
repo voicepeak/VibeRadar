@@ -192,6 +192,14 @@ class PricingConfig(_Model):
         except KeyError as exc:
             raise ConfigError(f"未配置模型价格: {provider}/{model}") from exc
 
+    def find_price(self, model: str) -> dict | None:
+        """按模型名在所有 provider 中查价；查不到返回 None（成本记 0 并标注未定价）。"""
+        for provider in self.providers.values():
+            models = provider.get("models") if isinstance(provider, dict) else None
+            if isinstance(models, dict) and model in models:
+                return dict(models[model])
+        return None
+
 
 class Settings(_Model):
     pipeline: PipelineConfig
@@ -221,7 +229,18 @@ class Settings(_Model):
 
     @property
     def llm_provider(self) -> str:
-        return os.environ.get("VIBERADAR_LLM_PROVIDER", "mock").lower()
+        return os.environ.get("VIBERADAR_LLM_PROVIDER", "auto").lower()
+
+    @property
+    def llm_config_path(self) -> Path:
+        override = os.environ.get("VIBERADAR_LLM_CONFIG")
+        if override:
+            return Path(override)
+        return self.data_dir / "llm.json"
+
+    @property
+    def llm_api_token(self) -> str | None:
+        return os.environ.get("VIBERADAR_LLM_API_TOKEN")
 
     @property
     def deepseek_api_key(self) -> str | None:

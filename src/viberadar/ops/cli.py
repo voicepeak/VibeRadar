@@ -18,7 +18,16 @@ from viberadar.compose.render import export_site
 from viberadar.contracts import IssueStatus
 from viberadar.deliver import dispatch_feishu, record_web_delivery, retry_failed_deliveries
 from viberadar.feedback import create_issue, resolve_issue
-from viberadar.llm import LLMGateway
+from viberadar.llm import (
+    PRESETS,
+    LLMClient,
+    LLMConfig,
+    LLMPrice,
+    LLMProfile,
+    load_store,
+    make_gateway,
+    preset_profile,
+)
 from viberadar.ops import backup as backup_mod
 from viberadar.ops import health, review
 from viberadar.pipeline import run_pipeline
@@ -85,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--cutoff", default=None, help="截点 ISO 时间（默认当日 07:30）")
     p.add_argument("--skip-ingest", action="store_true", help="复用既有原始条目（重放）")
     p.add_argument("--dry-run", action="store_true")
-    p.add_argument("--llm", choices=["mock", "deepseek", "none"], default=None)
+    p.add_argument("--llm", choices=["auto", "config", "mock", "deepseek", "none"], default=None)
     p.add_argument("--manual-file", default=None)
     p.add_argument("--json", action="store_true")
 
@@ -103,6 +112,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("freeze", help="冻结一期（应用人工修订层）")
     p.add_argument("--date", default=None)
     p.add_argument("--coverage", default=None, help="覆盖缺失提示，如“今日部分信源缺失”")
+    p.add_argument("--llm", choices=["auto", "config", "mock", "deepseek", "none"], default=None,
+                   help="开场白生成；默认按配置（无配置时模板）")
 
     p = sub.add_parser("publish", help="公开一期（默认排队到 09:00；--now 立即）")
     p.add_argument("--date", default=None)
@@ -126,7 +137,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true", default=True)
     p.add_argument("--no-dry-run", dest="dry_run", action="store_false")
     p.add_argument("--confirm", action="store_true")
-    p.add_argument("--llm", choices=["mock", "deepseek", "none"], default=None)
+    p.add_argument("--llm", choices=["auto", "config", "mock", "deepseek", "none"], default=None)
 
     p = sub.add_parser("eval", help="评测（缺少样本时拒绝生成虚假指标）")
     p.add_argument("--dataset-version", required=True)
@@ -177,6 +188,37 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--file", required=True)
     p.add_argument("--since", default=None)
     p.add_argument("--until", default=None)
+
+    p = sub.add_parser("llm", help="LLM 配置窗口（档案/阶段映射/连通性测试）")
+    llm_sub = p.add_subparsers(dest="llm_command", required=True)
+    llm_sub.add_parser("list", help="列出档案、激活项与阶段映射")
+    ps = llm_sub.add_parser("show", help="查看某个档案（密钥掩码）")
+    ps.add_argument("--name", default=None)
+    ps = llm_sub.add_parser("set", help="新增或更新档案")
+    ps.add_argument("--name", required=True)
+    ps.add_argument("--preset", default=None, help=f"预设之一：{', '.join(sorted(PRESETS))}")
+    ps.add_argument("--label", default=None)
+    ps.add_argument("--protocol", choices=["openai", "anthropic"], default=None)
+    ps.add_argument("--base-url", default=None)
+    ps.add_argument("--api-key", default=None, help="留空则保留原值；新档案不传则视为未设置")
+    ps.add_argument("--model-fast", default=None)
+    ps.add_argument("--model-strong", default=None)
+    ps.add_argument("--temperature", type=float, default=None)
+    ps.add_argument("--max-output-tokens", type=int, default=None)
+    ps.add_argument("--no-json-mode", dest="json_mode", action="store_false", default=None)
+    ps.add_argument("--price-in", type=float, default=None, help="美元/百万 token")
+    ps.add_argument("--price-out", type=float, default=None)
+    ps.add_argument("--price-cache-in", type=float, default=None)
+    ps = llm_sub.add_parser("use", help="设为激活档案")
+    ps.add_argument("--name", required=True)
+    ps = llm_sub.add_parser("stage", help="设置阶段档位（fast/strong）")
+    ps.add_argument("--stage", required=True, choices=["classify", "interest", "enrich", "compose", "api", "default"])
+    ps.add_argument("--tier", required=True, choices=["fast", "strong"])
+    ps = llm_sub.add_parser("test", help="连通性测试（一次最小调用）")
+    ps.add_argument("--name", default=None, help="默认测试激活档案")
+    ps = llm_sub.add_parser("remove", help="删除档案")
+    ps.add_argument("--name", required=True)
+    llm_sub.add_parser("presets", help="列出内置预设")
 
     return parser
 
@@ -237,8 +279,7 @@ def _load_manual(path: str) -> list[dict]:
 def _make_llm(settings: Settings, choice: str | None):
     if choice == "none":
         return None
-    provider = choice or settings.llm_provider
-    return LLMGateway(get_session_factory(), settings, provider=provider)
+    return make_gateway(get_session_factory(), settings, choice=choice)
 
 
 def _cmd_pipeline(args, settings: Settings) -> int:
@@ -325,6 +366,7 @@ def _cmd_review(args, settings: Settings) -> int:
 
 def _cmd_freeze(args, settings: Settings) -> int:
     edition_date = _parse_date(args.date, settings)
+    llm = _make_llm(settings, getattr(args, "llm", None))
     factory = get_session_factory()
     with factory() as session:
         edition = freeze_edition(
@@ -333,6 +375,7 @@ def _cmd_freeze(args, settings: Settings) -> int:
             settings=settings,
             source_coverage=args.coverage,
             operator="curator",
+            llm=llm,
         )
         session.commit()
         print(
@@ -354,7 +397,13 @@ def _cmd_publish(args, settings: Settings) -> int:
             return EXIT_ERROR
         if args.schedule or not args.now:
             if edition.status == "draft":
-                freeze_edition(session, edition_date, settings=settings, operator="curator")
+                freeze_edition(
+                    session,
+                    edition_date,
+                    settings=settings,
+                    operator="curator",
+                    llm=_make_llm(settings, None),
+                )
                 edition = repo_editions.get_edition_by_date(
                     session, edition_date, settings.pipeline.timezone
                 )
@@ -733,6 +782,170 @@ def _cmd_inject(args, settings: Settings) -> int:
     return EXIT_OK
 
 
+def _llm_store(settings: Settings):
+    return load_store(settings)
+
+
+def _load_config(store) -> LLMConfig:  # noqa: ANN001
+    return store.load_optional() or LLMConfig()
+
+
+def _cmd_llm(args, settings: Settings) -> int:
+    store = _llm_store(settings)
+    command = args.llm_command
+
+    if command == "presets":
+        for key, preset in sorted(PRESETS.items()):
+            print(
+                f"{key}: {preset['label']} | {preset['protocol']} | {preset['base_url']} | "
+                f"{preset['model_fast']} / {preset['model_strong']} | {preset['docs']}"
+            )
+        return EXIT_OK
+
+    if command == "list":
+        config = store.load_optional()
+        print(f"配置文件：{store.path}（{'存在' if config else '不存在'}）")
+        print(f"provider 解析：{settings.llm_provider}（auto=有档案用档案，否则 mock）")
+        if config is None or not config.profiles:
+            print("尚无档案。先 `viberadar llm set --name work --preset deepseek --api-key ...` 或在 /admin/llm 配置。")
+            return EXIT_OK
+        for name in config.unique_names():
+            profile = config.profiles[name]
+            marker = "*" if name == (config.active or "") else " "
+            key_state = profile.masked_key() or "未设置密钥"
+            print(
+                f"{marker} {name}: {profile.label or profile.protocol} | {profile.base_url} | "
+                f"{profile.model_fast or '-'} / {profile.model_strong or '-'} | {key_state}"
+            )
+        stages = config.stages or {}
+        print(
+            "阶段映射："
+            + "；".join(f"{s}={config.stage_tier(s)}" for s in ("classify", "interest", "enrich", "compose", "api"))
+            + (f"（default={stages.get('default')}）" if stages.get("default") else "")
+        )
+        return EXIT_OK
+
+    if command == "show":
+        config = store.load_optional()
+        if config is None or not config.profiles:
+            print("尚无档案。", file=sys.stderr)
+            return EXIT_ERROR
+        profile = config.get_profile(args.name) if args.name else config.active_profile()
+        print(json.dumps(profile.public_dict(), ensure_ascii=False, indent=2))
+        return EXIT_OK
+
+    if command == "set":
+        config = _load_config(store)
+        existing = config.profiles.get(args.name)
+        profile = preset_profile(args.preset, name=args.name) if args.preset else existing
+        if profile is None:
+            if not args.base_url:
+                print("新档案需要 --preset 或 --base-url。", file=sys.stderr)
+                return EXIT_REFUSED
+            profile = LLMProfile(name=args.name, base_url=args.base_url)
+        updates: dict = {}
+        for attr in ("label", "protocol", "base_url", "model_fast", "model_strong"):
+            value = getattr(args, attr)
+            if value is not None:
+                updates[attr] = value
+        if args.api_key is not None:
+            updates["api_key"] = args.api_key
+        if args.temperature is not None:
+            updates["temperature"] = args.temperature
+        if args.max_output_tokens is not None:
+            updates["max_output_tokens"] = args.max_output_tokens
+        if args.json_mode is not None:
+            updates["json_mode"] = args.json_mode
+        if any(
+            value is not None
+            for value in (args.price_in, args.price_out, args.price_cache_in)
+        ):
+            base_price = profile.price or LLMPrice()
+            updates["price"] = base_price.model_copy(
+                update={
+                    key: value
+                    for key, value in (
+                        ("input", args.price_in),
+                        ("output", args.price_out),
+                        ("cache_input", args.price_cache_in),
+                    )
+                    if value is not None
+                }
+            )
+        try:
+            profile = profile.model_copy(update=updates)
+        except Exception as exc:  # noqa: BLE001
+            print(f"档案校验失败：{exc}", file=sys.stderr)
+            return EXIT_CONFIG
+        config.profiles[args.name] = profile
+        if not config.active:
+            config.active = args.name
+        try:
+            store.save(config)
+        except ConfigError as exc:
+            print(f"保存失败：{exc}", file=sys.stderr)
+            return EXIT_CONFIG
+        print(
+            f"已保存档案 {args.name}（{profile.protocol} {profile.base_url}；密钥 {profile.masked_key() or '未设置'}）。"
+        )
+        return EXIT_OK
+
+    if command == "use":
+        config = _load_config(store)
+        config.get_profile(args.name)
+        config.active = args.name
+        store.save(config)
+        print(f"激活档案：{args.name}")
+        return EXIT_OK
+
+    if command == "stage":
+        config = _load_config(store)
+        config.stages[args.stage] = args.tier
+        store.save(config)
+        print(f"阶段 {args.stage} → {args.tier}")
+        return EXIT_OK
+
+    if command == "remove":
+        config = _load_config(store)
+        if args.name not in config.profiles:
+            print(f"档案不存在：{args.name}", file=sys.stderr)
+            return EXIT_ERROR
+        config.profiles.pop(args.name)
+        if config.active == args.name:
+            config.active = next(iter(config.profiles), "")
+        store.save(config)
+        print(f"已删除档案：{args.name}")
+        return EXIT_OK
+
+    if command == "test":
+        config = store.load_optional()
+        if config is None or not config.profiles:
+            print("尚无档案，无法测试。", file=sys.stderr)
+            return EXIT_REFUSED
+        profile = config.get_profile(args.name) if args.name else config.active_profile()
+        if not profile.api_key:
+            print(f"档案 {profile.name} 未设置 API key。", file=sys.stderr)
+            return EXIT_REFUSED
+        client = LLMClient(profile)
+        result = client.chat_text(
+            system="你是连通性探针，只回复一行结果。",
+            user="请只回复：OK",
+            model=profile.model_fast or profile.model_strong,
+            max_output_tokens=16,
+        )
+        if result.ok:
+            print(
+                f"连通成功：{profile.name} → {result.model}；{result.latency_ms}ms；"
+                f"回复：{(result.text or '').strip()[:80]}"
+            )
+            return EXIT_OK
+        print(f"连通失败：{result.error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    print(f"未知 llm 子命令：{command}", file=sys.stderr)
+    return EXIT_ERROR
+
+
 COMMANDS = {
     "ingest": _cmd_ingest,
     "pipeline": _cmd_pipeline,
@@ -753,6 +966,7 @@ COMMANDS = {
     "correct": _cmd_correct,
     "issues": _cmd_issues,
     "inject": _cmd_inject,
+    "llm": _cmd_llm,
 }
 
 

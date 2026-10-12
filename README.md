@@ -30,7 +30,7 @@
 | M6 编制分发 | 冻结快照（短刊/空刊/降级）、受控 `/go/{link_id}` 跳转、飞书 webhook 与发送账本、网页/飞书渠道解耦、unknown 不盲目重发 |
 | M7 反馈 | 第一方匿名 ID、事件去重、试玩与评价分离的当前态（改选/撤回）、原因可选、内容报错队列与更正关联、限流 |
 | M8 存档 | `/`、`/d/{date}`、`/p/{slug}`、`/saved`、`/feedback/{id}`、`/rss.xml`、sitemap、静态导出；中/英双语切换（`?lang=` + cookie 记忆，任何语言模式不混排）；重点推荐→分组→最近期号三级结构；360px 移动可读、无 JS 可读正文 |
-| M9 运维 | CLI（ingest/pipeline/review/freeze/publish/deliver/replay/eval/backup/restore/status…）、调度器（07:30/08:35/09:00/09:05）、互斥锁、成本账本与预算上限、备份与隔离恢复 |
+| M9 运维 | CLI（ingest/pipeline/review/freeze/publish/deliver/replay/eval/backup/restore/status/llm…）、调度器（07:30/08:35/09:00/09:05）、互斥锁、成本账本与预算上限、备份与隔离恢复 |
 
 ## 架构拓扑
 
@@ -47,7 +47,7 @@
  │ 人工注入 / PH*    │      │ → enrich（证据/门槛/指南）→ rank        │
  └──────────────────┘      │        ▲                    │          │
                            │        │   LLM Gateway      ▼          │
-                           │        └─ 缓存/预算/DeepSeek  候选池 ≤20 │
+                           │        └─ 缓存/预算/多 provider 候选池≤20 │
                            └────────────────┬───────────────────────┘
                                             ▼
                           ┌──────────────────────────────────┐
@@ -87,7 +87,7 @@
 py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 
-# 2) 运行测试（117 项：契约/单元/集成/验收）
+# 2) 运行测试（154 项：契约/单元/集成/验收）
 .\.venv\Scripts\python.exe -m pytest tests -q
 
 # 3) 人工注入两条候选并跑一条端到端管线（离线 mock LLM）
@@ -104,9 +104,48 @@ py -3.13 -m venv .venv
 # 打开 http://127.0.0.1:8000
 ```
 
-默认 `VIBERADAR_LLM_PROVIDER=mock`：无网络也可以完整跑通（规则分类 + 确定性模板）。
-启用真实模型：`$env:VIBERADAR_LLM_PROVIDER="deepseek"; $env:DEEPSEEK_API_KEY="..."`。
+默认 `VIBERADAR_LLM_PROVIDER=auto`：有 `data/llm.json` 档案时用真实模型，否则离线 mock（规则分类 + 确定性模板）。
+接入真实模型（OpenAI 兼容或 Anthropic 均可）：
+
+```powershell
+# 方式一：CLI 写入 data/llm.json
+python -m viberadar llm set --name work --preset deepseek --api-key sk-...
+python -m viberadar llm use --name work
+python -m viberadar llm test --name work        # 一次最小连通性调用
+
+# 方式二：配置窗口（浏览器）http://127.0.0.1:8000/admin/llm （需 VIBERADAR_ADMIN_TOKEN）
+
+# 或旧式环境变量直连 DeepSeek
+$env:VIBERADAR_LLM_PROVIDER="deepseek"; $env:DEEPSEEK_API_KEY="..."
+```
+
 生产建议同时设置 `VIBERADAR_STRICT_LLM=1`（无模型维度不得自动刊登）。
+
+## LLM 接入与配置窗口
+
+同一份 LLM 能力服务三类用途：本工具管线（分类、兴趣评估、用户故事/指南、期号开场白）、
+其他工具（Python 库或 HTTP 端点）、以及用户自配模型（配置窗口）。
+
+- 配置文件：`data/llm.json`（随 `data/` 一并 gitignore；密钥只落本地文件，不进数据库与日志）。
+- 档案（profile）：`protocol` 支持 `openai`（OpenAI 兼容，含 DeepSeek/Kimi/GLM/Ollama）与 `anthropic`
+  （Claude Messages）；每档配 `model_fast` / `model_strong` 与可选价格（美元/百万 token）。
+- 阶段映射：`classify/interest` 默认 fast，`enrich/compose` 默认 strong；可在窗口或
+  `viberadar llm stage --stage enrich --tier strong` 调整。
+- 复用方式：`from viberadar.llm import LLMClient` 直接调用；其他语言/工具走
+  `POST /api/llm/chat`（`X-Admin-Token` 或 `Bearer VIBERADAR_LLM_API_TOKEN`，共享缓存、预算与成本账本）。
+- 预算与成本：延续日/月硬上限；档案 `price` 缺省时可回退 `config/pricing.yaml`，都未定价则成本记 0
+  并在状态中标注，不阻塞调用。
+- 安全：管理页与 `/api/admin/*` 仅本机使用（Caddy 已 404）；`/api/llm/*` 需令牌。
+
+```powershell
+python -m viberadar llm list                 # 档案、激活项与阶段映射
+python -m viberadar llm presets              # 内置预设（deepseek/openai/anthropic/moonshot/zhipu/ollama）
+python -m viberadar llm set --name kimi --preset moonshot --api-key sk-...
+python -m viberadar llm test --name kimi     # 连通性测试
+curl -X POST http://127.0.0.1:8000/api/llm/chat `
+  -H "X-Admin-Token: $env:VIBERADAR_ADMIN_TOKEN" -H "Content-Type: application/json" `
+  -d '{"system":"你是助手","user":"用一个词回答：连通正常吗？","json_mode":false}'
+```
 
 ## 前端验收（可复跑）
 
@@ -147,6 +186,7 @@ python -m viberadar merge --from <slug> --into <slug> --reason "同产品证据"
 python -m viberadar backup                              # 含 manifest 哈希；保留 7 日 + 4 周
 python -m viberadar restore --backup-dir <dir> --staging <dir>
 python -m viberadar eval --dataset-version v1           # 缺少样本时拒绝生成虚假指标
+python -m viberadar llm set|use|stage|test|list          # LLM 档案与阶段映射（详见上文）
 ```
 
 所有命令输出运行目标、输入窗口与是否外发；破坏性操作默认 dry-run 或需要显式确认。
@@ -163,7 +203,7 @@ vibe-radar/
 │   ├── ingest/                        # adapter、抓取边界、水位编排
 │   ├── pipeline/                      # normalize/entities/classify/enrich/runner
 │   ├── rank/                          # 分位数、公式、多样性（第 7 章）
-│   ├── llm/                           # Gateway：缓存、预算、DeepSeek/离线 mock
+│   ├── llm/                           # 通用客户端（openai/anthropic）、配置档案、Gateway（缓存/预算）
 │   ├── compose/                       # 冻结、快照、更正、静态导出
 │   ├── deliver/                       # 发送账本、飞书、RSS
 │   ├── feedback/                      # 匿名身份、事件、当前态、报错
@@ -180,6 +220,7 @@ vibe-radar/
 ## 数据与隐私
 
 - 数据默认写入 `data/`（可用 `VIBERADAR_DATA_DIR` 覆盖）；SQLite 启用 WAL、外键与 busy_timeout。
+- `data/llm.json` 存放用户自配的 LLM 档案与 API key（gitignore；Unix 权限收紧为 600，不进数据库与日志）。
 - 公开页无私密数据；匿名反馈使用第一方随机标识，服务端带密钥派生 actor，不做指纹补全。
 - 收藏仅存于浏览器 localStorage（以 product_id 去重），不上传完整收藏夹、不跨设备同步。
 - 源元数据保留 90 天、匿名细粒度事件 90 天、审计与账本 1 年（PRD 10.4）。
@@ -188,13 +229,14 @@ vibe-radar/
 
 - 自动化程度：默认自动选刊，人工复核可选；`review` 交互计时用于 ≤15 分钟预算验证。
 - 富化“直接试玩”`direct` 需人工/探针实测记录；未实测不承诺 30 秒动手。
-- 中文指南在离线 mock 模式下使用确定性模板（可能包含来源原文），生产建议启用 DeepSeek。
+- 中文指南在离线 mock 模式下使用确定性模板（可能包含来源原文）；启用任一真实档案后由模型生成。
+- 未定价模型（档案未填价格且 pricing.yaml 无该模型）成本记 0 并标注，预算上限只对已定价模型生效。
 - PH 接入、RSS 完整反馈闭环、OG 图、Web Console 按 PRD 属于 P1/P2，当前为就绪实现或未启用。
 - `eval` 只做数据集完整性与 recall/precision 快检；完整评测报告随样本积累另行发布。
 
 ## 下一步
 
 1. 补齐评测样本（`evals/`，≥200 条、含负例与实体对），冻结留出集。
-2. 配置 `DEEPSEEK_API_KEY`、`GITHUB_TOKEN`、飞书测试 webhook 与 `VIBERADAR_SECRET_KEY`。
+2. 配置 LLM 档案（`viberadar llm set/use` 或 `/admin/llm`，支持 OpenAI 兼容与 Anthropic）、`GITHUB_TOKEN`、飞书测试 webhook 与 `VIBERADAR_SECRET_KEY`。
 3. 按 `deploy/env.example` 部署 Web + Scheduler + Caddy，执行一次隔离恢复演练。
 4. 执行 E01–E33 场景记录与 7 天连续运行观察，再进入试读（PRD 13.3 DoD）。

@@ -269,7 +269,7 @@ def _llm_classify(
             prompt_name="classify",
             system=COMMON_SYSTEM,
             payload=payload,
-            model="deepseek-flash",
+            model="fast",
             run_id=None,
             stage="classify",
             max_output_tokens=2000,

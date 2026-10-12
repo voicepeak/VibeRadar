@@ -480,6 +480,7 @@ def enrich_product(
         )
 
     if use_strong_model and llm is not None:
+        resolved_model = llm.model_for("strong")
         response = llm.chat_json(
             prompt_name="guide",
             system=COMMON_SYSTEM,
@@ -492,7 +493,7 @@ def enrich_product(
                     for ev in repo_products.list_evidence(session, evidence_ids)
                 ],
             },
-            model="deepseek-pro",
+            model="strong",
             stage="enrich",
             max_output_tokens=2400,
             mock_response=mock_guide_response,
@@ -509,7 +510,7 @@ def enrich_product(
                             "verification_status": enrichment.verification_status,
                             "time_promise": None,
                             "prompt_version": "guide-v2",
-                            "model_version": "deepseek-pro",
+                            "model_version": resolved_model,
                         }
                     )
                 else:

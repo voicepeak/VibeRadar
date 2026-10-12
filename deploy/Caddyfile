@@ -3,6 +3,10 @@
 example.com {
 	encode zstd gzip
 
+	# 管理面（LLM 配置窗口）不对外开放：本机直接访问 web:8000 或 SSH 隧道
+	@admin path /admin/* /api/admin/*
+	respond @admin "Not Found" 404
+
 	# 已发布的静态快照优先（publish 时导出到 public/d/）
 	handle /d/* {
 		root * /var/lib/viberadar/public

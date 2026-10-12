@@ -1,23 +1,38 @@
-"""LLM Gateway：结构化校验、缓存、用量与模型回退（PRD 10.1/13.1）。
+"""LLM Gateway：配置解析、结构化校验、缓存、用量与预算（PRD 10.1/13.1）。
 
-- provider=mock：离线确定性，用于开发与测试；调用方须提供 mock_response。
-- provider=deepseek：OpenAI 兼容 chat/completions，JSON 输出。
+- provider 解析顺序：显式参数 > VIBERADAR_LLM_PROVIDER > auto（有 data/llm.json 档案则用档案，否则 mock）。
+- mock：离线确定性，用于开发与测试；调用方须提供 mock_response。
+- 档案（data/llm.json）：openai 兼容或 anthropic 协议，模型分 fast/strong 两档。
 - 所有输出必须通过 Pydantic 校验后才能入库；失败不产生不可信内容。
 - 预算：调用前检查日/月硬上限；超出返回 ok=False（降级到缓存/模板）。
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
-from dataclasses import dataclass, field
+import logging
+import os
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Callable
 
 import httpx
 
-from viberadar.settings import Settings, get_settings
+from viberadar.settings import ConfigError, Settings, get_settings
 from viberadar.store import repo_ops
+
+from .client import LLMClient
+from .config import (
+    DEFAULT_TIER_MODELS,
+    LLMProfile,
+    legacy_deepseek_profile,
+    load_store,
+)
+from .costs import compute_cost, prompt_digest
+
+logger = logging.getLogger("viberadar.llm")
+
+_UNPRICED_WARNED: set[str] = set()
 
 
 class BudgetExceeded(RuntimeError):
@@ -28,6 +43,7 @@ class BudgetExceeded(RuntimeError):
 class LLMResult:
     ok: bool
     data: dict | None = None
+    text: str | None = None
     error: str | None = None
     cached: bool = False
     model: str = ""
@@ -35,44 +51,8 @@ class LLMResult:
     input_tokens: int = 0
     output_tokens: int = 0
     repair_attempted: bool = False
-
-
-def estimate_tokens(text: str) -> int:
-    """粗略估算：CJK 约 1.5 字符/token，其余约 4 字符/token。"""
-    cjk = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
-    other = len(text) - cjk
-    return max(1, int(cjk / 1.5 + other / 4))
-
-
-def compute_cost(
-    price: dict,
-    input_tokens: int,
-    cache_input_tokens: int,
-    output_tokens: int,
-    tier: str = "low",
-) -> Decimal:
-    if tier == "high":
-        in_price = float(price.get("input_high", price.get("input", 0)))
-        out_price = float(price.get("output_high", price.get("output", 0)))
-    else:
-        in_price = float(price.get("input", 0))
-        out_price = float(price.get("output", 0))
-    cache_price = float(price.get("cache_input", in_price))
-    non_cache = max(0, input_tokens - cache_input_tokens)
-    cost = (
-        non_cache * in_price
-        + cache_input_tokens * cache_price
-        + output_tokens * out_price
-    ) / 1_000_000
-    return Decimal(str(round(cost, 8)))
-
-
-def prompt_digest(parts: list[str]) -> str:
-    digest = hashlib.sha256()
-    for part in parts:
-        digest.update(part.encode("utf-8"))
-        digest.update(b"\x00")
-    return digest.hexdigest()
+    priced: bool = False
+    latency_ms: int = 0
 
 
 class LLMGateway:
@@ -82,11 +62,64 @@ class LLMGateway:
         settings: Settings | None = None,
         provider: str | None = None,
         transport: httpx.BaseTransport | None = None,
+        profile: LLMProfile | None = None,
     ) -> None:
         self._session_factory = session_factory
         self.settings = settings or get_settings()
-        self.provider = (provider or self.settings.llm_provider).lower()
         self._transport = transport
+        self.profile: LLMProfile | None = profile
+        self.provider = self._resolve_provider(provider)
+        self.client: LLMClient | None = (
+            LLMClient(self.profile, transport=transport) if self.profile else None
+        )
+
+    # ---------- 配置解析 ----------
+
+    def _resolve_provider(self, provider: str | None) -> str:
+        env = os.environ.get("VIBERADAR_LLM_PROVIDER", "").strip().lower()
+        choice = (provider or "").strip().lower() or env or "auto"
+
+        if choice in ("none", "disabled", "off"):
+            return "none"
+        if choice == "mock":
+            return "mock"
+        if choice == "deepseek":
+            if self.profile is None:
+                self.profile = legacy_deepseek_profile(self.settings)
+            return "deepseek"
+
+        store = load_store(self.settings)
+        config = store.load_optional()
+        if choice == "config":
+            if config is None or not config.profiles:
+                raise ConfigError("provider=config 但未找到 data/llm.json 档案；请先在配置窗口或 CLI 创建")
+            if self.profile is None:
+                self.profile = config.active_profile()
+            return f"profile:{self.profile.name}"
+        if choice == "auto":
+            if config is not None and config.profiles:
+                if self.profile is None:
+                    self.profile = config.active_profile()
+                return f"profile:{self.profile.name}"
+            return "mock"
+        if config is not None and choice in config.profiles:
+            if self.profile is None:
+                self.profile = config.get_profile(choice)
+            return f"profile:{self.profile.name}"
+        raise ConfigError(f"未知 LLM provider: {choice}（可用 mock/none/deepseek/config/auto 或档案名）")
+
+    @property
+    def model_tag(self) -> str:
+        if self.profile is not None:
+            return self.profile.name
+        return self.provider
+
+    def model_for(self, tier_or_model: str) -> str:
+        if self.profile is not None:
+            return self.profile.model_for(tier_or_model)
+        if tier_or_model in DEFAULT_TIER_MODELS:
+            return DEFAULT_TIER_MODELS[tier_or_model]
+        return tier_or_model
 
     # ---------- 预算 ----------
 
@@ -106,6 +139,18 @@ class LLMGateway:
             daily = repo_ops.daily_cost(session)
         return daily >= Decimal(str(budget.get("daily_alert_usd", 0.5)))
 
+    def budget_snapshot(self) -> dict:
+        budget = self.settings.pricing.budget
+        with self._session_factory() as session:
+            daily = repo_ops.daily_cost(session)
+            monthly = repo_ops.monthly_cost(session)
+        return {
+            "daily_usd": float(daily),
+            "monthly_usd": float(monthly),
+            "daily_cap_usd": float(budget.get("daily_hard_cap_usd", 2.0)),
+            "monthly_cap_usd": float(budget.get("monthly_hard_cap_usd", 30.0)),
+        }
+
     # ---------- 主入口 ----------
 
     def chat_json(
@@ -123,7 +168,8 @@ class LLMGateway:
         temperature: float = 0.0,
     ) -> LLMResult:
         rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-        digest = prompt_digest([prompt_name, model, system, rendered])
+        resolved_key = self.model_for(model)
+        digest = prompt_digest([prompt_name, resolved_key, system, rendered])
 
         with self._session_factory() as session:
             cached = repo_ops.cache_get(session, digest)
@@ -131,6 +177,9 @@ class LLMGateway:
             return LLMResult(
                 ok=True, data=dict(cached.output_json), cached=True, model=cached.model
             )
+
+        if self.provider == "none":
+            return LLMResult(ok=False, error="LLM 已禁用（provider=none）", model=model)
 
         try:
             self.check_budget()
@@ -142,43 +191,111 @@ class LLMGateway:
                 return LLMResult(
                     ok=False, error="mock provider 需要提供 mock_response", model=model
                 )
-            self._store_cache(digest, model, mock_response)
+            self._store_cache(digest, resolved_key, mock_response)
             return LLMResult(ok=True, data=mock_response, model=model)
 
-        if self.provider != "deepseek":
-            return LLMResult(ok=False, error=f"未知 provider: {self.provider}", model=model)
-
-        api_key = self.settings.deepseek_api_key
-        if not api_key:
-            return LLMResult(ok=False, error="缺少 DEEPSEEK_API_KEY", model=model)
-
-        result = self._deepseek_call(
+        resolved = resolved_key
+        user = self._render_user(prompt_name, payload)
+        assert self.client is not None
+        completion = self.client.chat_json(
             system=system,
-            user=self._render_user(prompt_name, payload),
-            model=model,
-            api_key=api_key,
+            user=user,
+            model=resolved,
             max_output_tokens=max_output_tokens,
             temperature=temperature,
         )
-        if result.ok and result.data is not None:
-            self._store_cache(digest, model, result.data)
-        if result.cost_usd > 0:
-            with self._session_factory() as session:
-                repo_ops.record_cost(
-                    session,
-                    model=model,
-                    input_tokens=result.input_tokens,
-                    cache_input_tokens=0,
-                    output_tokens=result.output_tokens,
-                    price_version=self.settings.pricing.price_version,
-                    cost_usd=result.cost_usd,
-                    run_id=run_id,
-                    stage=stage,
-                )
-                session.commit()
-        return result
+        if completion.ok and completion.data is not None:
+            self._store_cache(digest, resolved, completion.data)
+        self._record_completion(
+            completion, run_id=run_id, stage=stage, resolved_model=resolved
+        )
+        return LLMResult(
+            ok=completion.ok,
+            data=completion.data,
+            text=completion.text,
+            error=completion.error,
+            model=resolved,
+            cost_usd=completion.cost_usd,
+            input_tokens=completion.input_tokens,
+            output_tokens=completion.output_tokens,
+            priced=completion.priced,
+            latency_ms=completion.latency_ms,
+        )
 
-    # ---------- DeepSeek ----------
+    def raw_chat(
+        self,
+        *,
+        system: str,
+        user: str,
+        model: str = "fast",
+        json_mode: bool = True,
+        max_output_tokens: int | None = None,
+        temperature: float | None = None,
+        run_id: str | None = None,
+        stage: str = "api",
+        mock_response: dict | None = None,
+    ) -> LLMResult:
+        """通用原始对话（HTTP 端点与外部工具）：不做 schema 校验，只保证 JSON 可解析。"""
+        resolved_key = self.model_for(model)
+        digest = prompt_digest(["raw", resolved_key, "json" if json_mode else "text", system, user])
+        with self._session_factory() as session:
+            cached = repo_ops.cache_get(session, digest)
+        if cached is not None:
+            output = dict(cached.output_json)
+            text = output.pop("__text__", None)
+            return LLMResult(
+                ok=True,
+                data=None if text is not None else output,
+                text=text,
+                cached=True,
+                model=cached.model,
+            )
+
+        if self.provider == "none":
+            return LLMResult(ok=False, error="LLM 已禁用（provider=none）", model=model)
+        try:
+            self.check_budget()
+        except BudgetExceeded as exc:
+            return LLMResult(ok=False, error=str(exc), model=model)
+        if self.provider == "mock":
+            if mock_response is None:
+                return LLMResult(
+                    ok=False, error="mock provider 需要提供 mock_response", model=model
+                )
+            return LLMResult(ok=True, data=mock_response, model=model)
+
+        resolved = resolved_key
+        assert self.client is not None
+        completion = self.client.complete(
+            system=system,
+            user=user,
+            model=resolved,
+            max_output_tokens=max_output_tokens,
+            temperature=temperature,
+            json_mode=json_mode,
+        )
+        if completion.ok:
+            output = completion.data or {"__text__": completion.text or ""}
+            if not json_mode:
+                output = {"__text__": completion.text or ""}
+            self._store_cache(digest, resolved, output)
+        self._record_completion(
+            completion, run_id=run_id, stage=stage, resolved_model=resolved
+        )
+        return LLMResult(
+            ok=completion.ok,
+            data=completion.data,
+            text=completion.text,
+            error=completion.error,
+            model=resolved,
+            cost_usd=completion.cost_usd,
+            input_tokens=completion.input_tokens,
+            output_tokens=completion.output_tokens,
+            priced=completion.priced,
+            latency_ms=completion.latency_ms,
+        )
+
+    # ---------- 内部 ----------
 
     def _render_user(self, prompt_name: str, payload: dict) -> str:
         from viberadar.settings import read_prompt
@@ -186,69 +303,69 @@ class LLMGateway:
         template = read_prompt(prompt_name)
         return f"{template}\n\n输入数据：\n{json.dumps(payload, ensure_ascii=False, indent=1)}"
 
-    def _deepseek_call(
+    def _price_for(self, model: str) -> tuple[dict | None, str]:
+        if self.profile is not None and self.profile.price is not None:
+            if self.profile.price.configured:
+                return self.profile.price.model_dump(), f"profile:{self.profile.name}"
+        found = self.settings.pricing.find_price(model)
+        if found is not None:
+            return found, self.settings.pricing.price_version
+        return None, "unpriced"
+
+    def _record_completion(
         self,
+        completion,  # noqa: ANN001
         *,
-        system: str,
-        user: str,
-        model: str,
-        api_key: str,
-        max_output_tokens: int,
-        temperature: float,
-    ) -> LLMResult:
-        url = f"{self.settings.deepseek_base_url.rstrip('/')}/chat/completions"
-        body = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "response_format": {"type": "json_object"},
-            "temperature": temperature,
-            "max_tokens": max_output_tokens,
-        }
-        headers = {"Authorization": f"Bearer {api_key}"}
-        last_error: str | None = None
-        for attempt in range(2):
-            try:
-                client = httpx.Client(
-                    timeout=60.0, transport=self._transport, headers=headers
-                )
-                with client:
-                    response = client.post(url, json=body)
-                if response.status_code in (429, 500, 502, 503, 504):
-                    last_error = f"HTTP {response.status_code}"
-                    continue
-                if response.status_code != 200:
-                    return LLMResult(
-                        ok=False,
-                        error=f"HTTP {response.status_code}: {response.text[:200]}",
-                        model=model,
-                    )
-                data = response.json()
-                content = data["choices"][0]["message"]["content"]
-                parsed = json.loads(content)
-                usage = data.get("usage", {})
-                in_tokens = int(usage.get("prompt_tokens") or estimate_tokens(user))
-                out_tokens = int(usage.get("completion_tokens") or estimate_tokens(content))
-                price = self.settings.pricing.model_price("deepseek", model)
-                cost = compute_cost(price, in_tokens, 0, out_tokens)
-                return LLMResult(
-                    ok=True,
-                    data=parsed,
-                    model=model,
-                    cost_usd=cost,
-                    input_tokens=in_tokens,
-                    output_tokens=out_tokens,
-                )
-            except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError) as exc:
-                last_error = f"{type(exc).__name__}: {exc}"
-        return LLMResult(ok=False, error=last_error or "未知错误", model=model)
+        run_id: str | None,
+        stage: str | None,
+        resolved_model: str,
+    ) -> None:
+        if completion.input_tokens <= 0 and completion.output_tokens <= 0:
+            return
+        price, price_version = self._price_for(resolved_model)
+        cost = completion.cost_usd
+        priced = completion.priced
+        if price is not None and not priced:
+            cost = compute_cost(price, completion.input_tokens, 0, completion.output_tokens)
+            priced = True
+        if not priced and resolved_model not in _UNPRICED_WARNED:
+            _UNPRICED_WARNED.add(resolved_model)
+            logger.warning(
+                "模型未定价（%s）：成本记 0；可在配置窗口补 price 或更新 config/pricing.yaml",
+                resolved_model,
+            )
+        with self._session_factory() as session:
+            repo_ops.record_cost(
+                session,
+                model=resolved_model,
+                input_tokens=completion.input_tokens,
+                cache_input_tokens=0,
+                output_tokens=completion.output_tokens,
+                price_version=price_version,
+                cost_usd=cost,
+                run_id=run_id,
+                stage=stage,
+            )
+            session.commit()
 
     def _store_cache(self, digest: str, model: str, output: dict) -> None:
         with self._session_factory() as session:
             repo_ops.cache_put(session, digest, model, output)
             session.commit()
+
+
+def make_gateway(
+    session_factory: Callable[[], Any],
+    settings: Settings | None = None,
+    choice: str | None = None,
+    transport: httpx.BaseTransport | None = None,
+) -> LLMGateway | None:
+    """按 provider 选择构建 Gateway；provider=none 返回 None。"""
+    settings = settings or get_settings()
+    resolved = (choice or "").strip().lower()
+    if resolved in ("none", "disabled", "off"):
+        return None
+    return LLMGateway(session_factory, settings, provider=choice or None, transport=transport)
 
 
 # 共同 system 约束（PRD 附录 D）

@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+{% block title %}LLM 配置 · Vibe Radar{% endblock %}
+{% block head %}
+<meta name="robots" content="noindex">
+<style>
+  .admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+  .admin-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+  .admin-grid input, .admin-grid select {
+    padding: 8px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); color: var(--text); font: inherit;
+  }
+  .admin-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+  .admin-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .admin-log {
+    margin-top: 14px; padding: 10px 12px; border-radius: 8px; background: var(--surface);
+    border: 1px solid var(--border); font-size: 13px; white-space: pre-wrap; min-height: 20px;
+  }
+  .admin-log.ok { border-color: var(--accent-2); }
+  .admin-log.err { border-color: #c0392b; }
+  .admin-key-hint { font-size: 12px; }
+</style>
+{% endblock %}
+{% block content %}
+<h1 style="font-size: 22px;">LLM 配置窗口</h1>
+<p class="muted">配置保存在数据目录的 <code>llm.json</code>（本地文件、密钥不进数据库）。其他工具可调用
+  <code>POST /api/llm/chat</code> 复用同一份配置。</p>
+
+<section class="card">
+  <div class="admin-row">
+    <label style="display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);">
+      管理令牌（VIBERADAR_ADMIN_TOKEN）
+      <input id="token" type="password" autocomplete="off" placeholder="输入令牌后加载">
+    </label>
+    <button class="btn" id="load-btn" type="button">加载配置</button>
+    <span id="gate-msg" class="muted"></span>
+  </div>
+</section>
+
+<div id="panel" hidden>
+  <section class="card" style="margin-top: 14px;">
+    <h2 class="section-title">模型档案</h2>
+    <div class="admin-row">
+      <select id="profile-select"></select>
+      <button class="btn" id="new-btn" type="button">新建</button>
+      <button class="btn" id="delete-btn" type="button">删除</button>
+    </div>
+    <div class="admin-grid">
+      <label>档案名（唯一）<input id="pf-name" placeholder="work"></label>
+      <label>名称备注<input id="pf-label" placeholder="如：DeepSeek 官方"></label>
+      <label>预设一键填充
+        <select id="preset-select">
+          <option value="">— 选择预设 —</option>
+        </select>
+      </label>
+      <label>协议
+        <select id="pf-protocol">
+          <option value="openai">openai（OpenAI 兼容）</option>
+          <option value="anthropic">anthropic（Claude Messages）</option>
+        </select>
+      </label>
+      <label>Base URL<input id="pf-base-url" placeholder="https://api.deepseek.com"></label>
+      <label>API Key（留空=保持原密钥）<input id="pf-api-key" type="password" autocomplete="off"></label>
+      <label>快档模型 fast<input id="pf-model-fast" placeholder="deepseek-chat"></label>
+      <label>强档模型 strong<input id="pf-model-strong" placeholder="deepseek-reasoner"></label>
+      <label>temperature<input id="pf-temperature" type="number" step="0.1" min="0" max="2" value="0"></label>
+      <label>单次输出上限 tokens<input id="pf-max-tokens" type="number" min="1" max="8000" value="1600"></label>
+      <label>JSON 模式
+        <select id="pf-json-mode"><option value="1">开启</option><option value="0">关闭</option></select>
+      </label>
+      <label>价格：输入 $/M<input id="pf-price-in" type="number" step="0.01" min="0" value="0"></label>
+      <label>价格：输出 $/M<input id="pf-price-out" type="number" step="0.01" min="0" value="0"></label>
+      <label>价格：缓存命中 $/M<input id="pf-price-cache" type="number" step="0.01" min="0" value="0"></label>
+    </div>
+    <p class="muted admin-key-hint">价格留 0 表示未定价：成本记 0 并在状态中标注；预算上限以已定价模型为准。</p>
+    <div class="admin-actions">
+      <button class="btn" id="save-btn" type="button">保存档案</button>
+      <button class="btn" id="test-btn" type="button">测试连接</button>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top: 14px;">
+    <h2 class="section-title">阶段映射与激活档案</h2>
+    <div class="admin-grid">
+      <label>classify<input data-stage="classify"></label>
+      <label>interest<input data-stage="interest"></label>
+      <label>enrich<input data-stage="enrich"></label>
+      <label>compose<input data-stage="compose"></label>
+      <label>api<input data-stage="api"></label>
+      <label>激活档案<select id="active-select"></select></label>
+    </div>
+    <div class="admin-actions">
+      <button class="btn" id="save-stages-btn" type="button">保存阶段映射</button>
+    </div>
+  </section>
+
+  <div id="log" class="admin-log" aria-live="polite"></div>
+</div>
+
+<script>
+(function () {
+  var state = { config: null, current: null };
+  var $ = function (id) { return document.getElementById(id); };
+  function token() { return $("token").value.trim(); }
+  function log(msg, kind) {
+    var el = $("log");
+    el.textContent = msg;
+    el.className = "admin-log" + (kind ? " " + kind : "");
+  }
+  function api(path, options) {
+    options = options || {};
+    options.headers = Object.assign(
+      { "X-Admin-Token": token(), "Content-Type": "application/json" },
+      options.headers || {}
+    );
+    return fetch(path, options).then(function (resp) {
+      return resp.json().then(function (body) {
+        if (!resp.ok) {
+          throw new Error((body && (body.message || body.detail)) || ("HTTP " + resp.status));
+        }
+        return body;
+      });
+    });
+  }
+  function fillForm(profile) {
+    $("pf-name").value = profile ? profile.name : "";
+    $("pf-name").readOnly = !!profile;
+    $("pf-label").value = profile ? (profile.label || "") : "";
+    $("pf-protocol").value = profile ? profile.protocol : "openai";
+    $("pf-base-url").value = profile ? profile.base_url : "";
+    $("pf-api-key").value = "";
+    $("pf-api-key").placeholder = profile && profile.api_key_set
+      ? "已设置（" + profile.api_key_masked + "），留空保持"
+      : "尚未设置";
+    $("pf-model-fast").value = profile ? (profile.model_fast || "") : "";
+    $("pf-model-strong").value = profile ? (profile.model_strong || "") : "";
+    $("pf-temperature").value = profile ? profile.temperature : 0;
+    $("pf-max-tokens").value = profile ? profile.max_output_tokens : 1600;
+    $("pf-json-mode").value = profile && !profile.json_mode ? "0" : "1";
+    var price = (profile && profile.price) || {};
+    $("pf-price-in").value = price.input || 0;
+    $("pf-price-out").value = price.output || 0;
+    $("pf-price-cache").value = price.cache_input || 0;
+  }
+  function renderProfiles() {
+    var config = state.config;
+    var select = $("profile-select");
+    select.innerHTML = "";
+    (config.profiles || []).forEach(function (profile) {
+      var option = document.createElement("option");
+      option.value = profile.name;
+      option.textContent = profile.name + (profile.name === config.active ? "（激活）" : "");
+      select.appendChild(option);
+    });
+    var active = $("active-select");
+    active.innerHTML = "";
+    var empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = "— 未激活 —";
+    active.appendChild(empty);
+    (config.profiles || []).forEach(function (profile) {
+      var option = document.createElement("option");
+      option.value = profile.name;
+      option.textContent = profile.name;
+      active.appendChild(option);
+    });
+    active.value = config.active || "";
+    state.current = select.value || null;
+    var found = (config.profiles || []).filter(function (p) { return p.name === state.current; })[0];
+    fillForm(found || null);
+    var stages = config.stages || {};
+    document.querySelectorAll("[data-stage]").forEach(function (el) {
+      var wrap = el;
+      if (el.tagName !== "SELECT") {
+        wrap = document.createElement("select");
+        ["fast", "strong"].forEach(function (tier) {
+          var option = document.createElement("option");
+          option.value = tier;
+          option.textContent = tier;
+          wrap.appendChild(option);
+        });
+        wrap.dataset.stage = el.dataset.stage;
+        el.replaceWith(wrap);
+      }
+      wrap.value = stages[wrap.dataset.stage] || "fast";
+    });
+  }
+  function load() {
+    sessionStorage.setItem("vr_admin_token", token());
+    api("/api/admin/llm/config").then(function (config) {
+      state.config = config;
+      $("panel").hidden = false;
+      $("gate-msg").textContent = "已加载：" + config.path;
+      var select = $("preset-select");
+      select.innerHTML = '<option value="">— 选择预设 —</option>';
+      Object.keys(config.presets || {}).forEach(function (key) {
+        var option = document.createElement("option");
+        option.value = key;
+        option.textContent = config.presets[key].label + "（" + key + "）";
+        select.appendChild(option);
+      });
+      renderProfiles();
+      log("配置已加载。", "ok");
+    }).catch(function (err) { log("加载失败：" + err.message, "err"); });
+  }
+  function collectProfile() {
+    return {
+      name: $("pf-name").value.trim(),
+      label: $("pf-label").value.trim(),
+      protocol: $("pf-protocol").value,
+      base_url: $("pf-base-url").value.trim(),
+      api_key: $("pf-api-key").value ? $("pf-api-key").value : "__KEEP__",
+      model_fast: $("pf-model-fast").value.trim(),
+      model_strong: $("pf-model-strong").value.trim(),
+      temperature: parseFloat($("pf-temperature").value || "0"),
+      max_output_tokens: parseInt($("pf-max-tokens").value || "1600", 10),
+      json_mode: $("pf-json-mode").value === "1",
+      price: {
+        input: parseFloat($("pf-price-in").value || "0"),
+        output: parseFloat($("pf-price-out").value || "0"),
+        cache_input: parseFloat($("pf-price-cache").value || "0")
+      }
+    };
+  }
+  function saveProfile() {
+    var profile = collectProfile();
+    if (!profile.name) { log("档案名不能为空。", "err"); return; }
+    api("/api/admin/llm/config", { method: "PUT", body: JSON.stringify({ profiles: [profile] }) })
+      .then(function () {
+        log("档案 " + profile.name + " 已保存。", "ok");
+        return load();
+      })
+      .catch(function (err) { log("保存失败：" + err.message, "err"); });
+  }
+  function saveStages() {
+    var stages = {};
+    document.querySelectorAll("[data-stage]").forEach(function (el) {
+      stages[el.dataset.stage] = el.value;
+    });
+    api("/api/admin/llm/config", {
+      method: "PUT",
+      body: JSON.stringify({ stages: stages, active: $("active-select").value })
+    })
+      .then(function () { log("阶段映射与激活档案已保存。", "ok"); return load(); })
+      .catch(function (err) { log("保存失败：" + err.message, "err"); });
+  }
+  function testProfile() {
+    log("测试中…");
+    api("/api/admin/llm/test", {
+      method: "POST",
+      body: JSON.stringify({ profile: state.current })
+    })
+      .then(function (result) {
+        log("连通成功：" + result.profile + " → " + result.model + "（" + result.latency_ms + "ms）\n回复：" + result.text, "ok");
+      })
+      .catch(function (err) { log("连通失败：" + err.message, "err"); });
+  }
+  function deleteProfile() {
+    if (!state.current) { return; }
+    if (!window.confirm("确定删除档案 " + state.current + "？")) { return; }
+    api("/api/admin/llm/profiles/" + encodeURIComponent(state.current), { method: "DELETE" })
+      .then(function () { log("档案已删除。", "ok"); return load(); })
+      .catch(function (err) { log("删除失败：" + err.message, "err"); });
+  }
+  function applyPreset(key) {
+    var preset = (state.config.presets || {})[key];
+    if (!preset) { return; }
+    $("pf-protocol").value = preset.protocol;
+    $("pf-base-url").value = preset.base_url;
+    $("pf-model-fast").value = preset.model_fast;
+    $("pf-model-strong").value = preset.model_strong;
+    if (!$("pf-label").value) { $("pf-label").value = preset.label; }
+    if (!$("pf-name").value) { $("pf-name").value = key; }
+  }
+  $("load-btn").addEventListener("click", load);
+  $("token").addEventListener("keydown", function (event) { if (event.key === "Enter") { load(); } });
+  $("profile-select").addEventListener("change", function () {
+    state.current = $("profile-select").value;
+    var found = (state.config.profiles || []).filter(function (p) { return p.name === state.current; })[0];
+    fillForm(found || null);
+  });
+  $("new-btn").addEventListener("click", function () {
+    state.current = null;
+    $("profile-select").value = "";
+    fillForm(null);
+  });
+  $("save-btn").addEventListener("click", saveProfile);
+  $("test-btn").addEventListener("click", testProfile);
+  $("delete-btn").addEventListener("click", deleteProfile);
+  $("save-stages-btn").addEventListener("click", saveStages);
+  $("preset-select").addEventListener("change", function () { applyPreset(this.value); });
+  var saved = sessionStorage.getItem("vr_admin_token");
+  if (saved) { $("token").value = saved; load(); }
+})();
+</script>
+{% endblock %}

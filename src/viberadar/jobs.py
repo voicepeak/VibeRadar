@@ -16,12 +16,21 @@ from viberadar.compose import freeze_edition, publish_edition
 from viberadar.compose.render import export_site
 from viberadar.deliver import dispatch_feishu, record_web_delivery, retry_failed_deliveries
 from viberadar.ingest import run_all_sources
-from viberadar.llm import LLMGateway
+from viberadar.llm import LLMGateway, make_gateway
 from viberadar.pipeline import run_pipeline
 from viberadar.settings import Settings
 from viberadar.store import repo_editions, repo_ops, repo_pipeline
 
 logger = logging.getLogger("viberadar.jobs")
+
+
+def _default_llm(session: Session, settings: Settings) -> LLMGateway | None:
+    """调度任务按当前配置构建 Gateway；离线 mock 不注入（避免无意义报错）。"""
+    factory = sessionmaker(bind=session.get_bind(), future=True, expire_on_commit=False)
+    gateway = make_gateway(factory, settings)
+    if gateway is not None and gateway.provider == "mock":
+        return None
+    return gateway
 
 
 def _local_now(settings: Settings) -> datetime:
@@ -53,6 +62,8 @@ def job_cutoff_pipeline(
     llm: LLMGateway | None = None,
     now: datetime | None = None,
 ) -> dict:
+    if llm is None:
+        llm = _default_llm(session, settings)
     report = run_pipeline(
         session,
         edition_date,
@@ -68,7 +79,14 @@ def job_cutoff_pipeline(
     }
 
 
-def job_freeze(session: Session, settings: Settings, edition_date: date) -> dict:
+def job_freeze(
+    session: Session,
+    settings: Settings,
+    edition_date: date,
+    llm: LLMGateway | None = None,
+) -> dict:
+    if llm is None:
+        llm = _default_llm(session, settings)
     edition = freeze_edition(
         session,
         edition_date,
@@ -83,6 +101,7 @@ def job_freeze(session: Session, settings: Settings, edition_date: date) -> dict
             else None
         ),
         operator="scheduler",
+        llm=llm,
     )
     return {"edition_id": edition.id, "status": edition.status}
 

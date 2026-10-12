@@ -768,7 +768,7 @@ def _assess_interest(
             prompt_name="interest",
             system="",
             payload={"item_id": entry.raw_item.id},
-            model="deepseek-flash",
+            model="fast",
             stage="interest",
             max_output_tokens=800,
             mock_response=mock_interest_response,

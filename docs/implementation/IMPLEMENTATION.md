@@ -17,6 +17,7 @@
 | M7 反馈 | `feedback/`（actors/events/state/issues）、`web/routes_api.py` | `test_feedback.py`、`test_web.py` |
 | M8 存档 | `web/`（模板/路由）、`compose/render.py`（静态导出） | `test_web.py`、端到端冒烟 |
 | M9 运维 | `ops/`（cli/health/backup/cost）、`jobs.py` | `test_cli.py`、`test_backup.py`、`test_config.py` |
+| LLM 接入 | `llm/`（client/config/gateway/costs）、`web/routes_llm.py`、`ops/cli.py llm` | `test_llm_config.py`、`test_llm_client.py`、`test_llm_gateway.py`、`test_llm_web.py`、`test_llm_compose.py` |
 | 第 8 章契约 | `contracts/`、`store/models.py`（唯一键/外键/检查约束） | `test_contracts.py`、`test_store.py` |
 | 第 9 章接口 | `web/routes_api.py`（ETag、限流、同源、统一错误格式） | `test_web.py` |
 | 第 7 章公式 | `rank/formula.py` 与 `config/rubric.yaml` | `test_rank.py::test_score_formula_*` |
@@ -28,11 +29,30 @@ python -m viberadar <命令>          # 或已安装后直接 viberadar
 python -m viberadar pipeline --llm none   # 离线规则模式
 python -m viberadar serve --port 8000
 python -m viberadar scheduler       # 或 scheduler --once（任务计划）
-python -m pytest tests -q           # 108 项测试
+python -m pytest tests -q           # 154 项测试
 ```
 
-默认 `VIBERADAR_LLM_PROVIDER=mock`：不调用外部模型；分类走“规则先排、弱匹配等待人工”，
-指南走确定性模板。生产启用 `deepseek` 并按需设置 `VIBERADAR_STRICT_LLM=1`。
+默认 `VIBERADAR_LLM_PROVIDER=auto`：存在 `data/llm.json` 档案时启用真实模型，否则离线 mock
+（不调用外部模型；分类走“规则先排、弱匹配等待人工”，指南与开场白走确定性模板）。
+档案可用 `viberadar llm set/use/stage` 或 `/admin/llm` 配置窗口维护（OpenAI 兼容与 Anthropic
+两种协议），生产按需设置 `VIBERADAR_STRICT_LLM=1`。
+
+## LLM 接入（2026-10-13 扩展）
+
+PRD 10.1 以 DeepSeek 为唯一模型来源；本次扩展在不改变管线契约的前提下把 LLM 层做成可复用组件：
+
+- `llm/client.py`：无数据库依赖的通用客户端，支持 openai（/chat/completions）与 anthropic（/v1/messages）、
+  JSON 提取、429/5xx 重试；其他工具可直接 import。
+- `llm/config.py`：`data/llm.json` 档案（协议/base_url/密钥/fast+strong 模型/可选价格）与预设；
+  密钥仅落本地文件（0600），接口响应一律掩码。
+- `llm/gateway.py`：缓存、预算、成本账本、阶段映射（classify/interest→fast，enrich/compose→strong）；
+  模型 `price` 缺省时回退 `pricing.yaml`，均未定价则成本记 0 并标注（`price_version=unpriced`）。
+- 管线接线：分类/兴趣/指南改用档位名；`freeze_edition` 增加 LLM 开场白（compose prompt），
+  `item_ids` 与输入不一致或失败时回退模板；调度任务（cutoff/freeze）按配置自动注入 Gateway。
+- 复用出口：`POST /api/llm/chat`（令牌保护，共享缓存与预算）与 `GET /api/llm/status`；
+  管理面 `GET /admin/llm`、`GET/PUT /api/admin/llm/config`、`POST /api/admin/llm/test`、
+  `DELETE /api/admin/llm/profiles/{name}`；Caddy 已把 `/admin/*`、`/api/admin/*` 从公网 404。
+
 
 ## 附录 E 验收场景覆盖
 
@@ -100,8 +120,10 @@ python tools/qa_frontend.py         # Playwright：桌面 + 360px，46 项断言
 
 ## 已知偏差与边界
 
-1. 离线（mock）模式下指南为确定性模板，可能保留来源原文；生产建议启用 DeepSeek 生成中文文案。
+1. 离线（mock）模式下指南为确定性模板，可能保留来源原文；启用任一真实档案后由模型生成。
 2. Product Hunt 适配器按 PRD 保持停用，需凭据与条款核查后开启。
 3. 限流为单实例内存实现，多 worker 部署需替换为外部存储（P0 为单实例）。
 4. `review` 交互为终端问答式（支持 j/k/a/r/e/l/u/s 键位），非全屏 TUI；满足 P0 CLI 要求。
 5. `eval` 提供数据集完整性与 recall/precision 快检，不是完整评测报告；门槛比较结果随样本版本记录。
+6. 未定价模型成本记 0（标注 `unpriced`），预算上限只覆盖已定价模型；可在档案或 `pricing.yaml` 补价。
+7. `/api/llm/chat` 与配置窗口为内部工具面，公网部署请保持管理路径 404（Caddy 默认）并轮换令牌。

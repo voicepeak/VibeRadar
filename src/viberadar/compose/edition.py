@@ -23,6 +23,7 @@ from viberadar.contracts import (
     utcnow,
 )
 from viberadar.i18n import localize_card_content
+from viberadar.llm import COMMON_SYSTEM, LLMGateway
 from viberadar.settings import Settings, get_settings
 from viberadar.rank import select_public_items
 from viberadar.rank.diversity import DiversityItem
@@ -146,6 +147,8 @@ def freeze_edition(
     mode: str | None = None,
     operator: str = "auto",
     now: datetime | None = None,
+    llm: LLMGateway | None = None,
+    mock_compose_response: dict | None = None,
 ) -> EditionRow:
     settings = settings or get_settings()
     now = now or utcnow()
@@ -189,7 +192,17 @@ def freeze_edition(
         )
 
     rows = repo_editions.replace_items(session, edition, revision, items_payload)
-    edition.intro = _intro(selection.content_status, len(items_payload))
+    intro, intro_note = _compose_intro(
+        edition_date,
+        selection,
+        items_payload,
+        source_coverage,
+        llm=llm,
+        mock_compose_response=mock_compose_response,
+    )
+    if intro_note:
+        selection.notes.append(intro_note)
+    edition.intro = intro
     edition.source_coverage = source_coverage
     edition.mode = mode
     edition.content_status = selection.content_status
@@ -239,6 +252,57 @@ def _intro(content_status: str, count: int) -> str:
     if content_status == ContentStatus.SHORT.value:
         return f"今日通过核验的推荐较少，精选 {count} 条。"
     return f"今日精选 {count} 条。"
+
+
+def _compose_intro(
+    edition_date: date,
+    selection: SelectionResult,
+    items_payload: list[dict],
+    source_coverage: str | None,
+    *,
+    llm: LLMGateway | None,
+    mock_compose_response: dict | None,
+) -> tuple[str, str | None]:
+    """模型生成开场白；失败或 item_ids 不一致时退回确定性模板（PRD M6）。"""
+    fallback = _intro(selection.content_status, len(items_payload))
+    if llm is None or not items_payload:
+        return fallback, None
+    payload = {
+        "edition_date": edition_date.isoformat(),
+        "content_status": selection.content_status,
+        "selected_items": [
+            {
+                "item_id": item["product_id"],
+                "name": (item.get("content") or {}).get("name"),
+                "one_liner": (item.get("content") or {}).get("one_liner"),
+                "category_label": (item.get("content") or {}).get("category_label"),
+                "section": item.get("section"),
+                "highlight": bool(item.get("highlight")),
+            }
+            for item in items_payload
+        ],
+        "source_coverage": source_coverage or "",
+    }
+    response = llm.chat_json(
+        prompt_name="compose",
+        system=COMMON_SYSTEM,
+        payload=payload,
+        model="strong",
+        stage="compose",
+        max_output_tokens=800,
+        mock_response=mock_compose_response,
+    )
+    if not response.ok or not response.data:
+        return fallback, f"compose LLM 不可用（{response.error}），使用模板开场"
+    data = response.data
+    expected = {item["product_id"] for item in items_payload}
+    got = {str(value) for value in (data.get("item_ids") or [])}
+    if got != expected:
+        return fallback, "compose item_ids 与输入不一致，使用模板开场"
+    intro = data.get("intro")
+    if not isinstance(intro, str) or not intro.strip():
+        return fallback, "compose intro 为空，使用模板开场"
+    return intro.strip()[:300], None
 
 
 def publish_edition(
