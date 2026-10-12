@@ -112,7 +112,7 @@ py -3.13 -m venv .venv
 
 ```powershell
 python tools/seed_acceptance.py   # 可选：昨天常规刊 6 条 + 前天空刊
-python tools/qa_frontend.py       # 45 项断言 + 桌面/360px 截图（logs/qa/）
+python tools/qa_frontend.py       # 46 项断言 + 桌面/360px 截图（logs/qa/）
 ```
 
 服务已在运行即可执行；覆盖首页分级、短刊/空刊、产品页、反馈与收藏交互、404、移动端可用性。

@@ -69,7 +69,7 @@ python -m pytest tests -q           # 108 项测试
 
 ```powershell
 python tools/seed_acceptance.py     # 可选：准备昨日常规刊 6 条 + 前天空刊
-python tools/qa_frontend.py         # Playwright：桌面 + 360px，45 项断言，截图在 logs/qa/
+python tools/qa_frontend.py         # Playwright：桌面 + 360px，46 项断言，截图在 logs/qa/
 ```
 
 覆盖（对应 PRD 4.6/M8/US-01/02/03/05）：
@@ -78,7 +78,7 @@ python tools/qa_frontend.py         # Playwright：桌面 + 360px，45 项断言
 - 日期页：重点推荐 1–2 条优先、其余分组；方案（直接试玩/看演示/安装体验）、门槛、证据状态、核查时间可见；往期回顾只含更早期号
 - 空刊页：明确"暂无推荐、未用旧产品冒充今日新品"，保留历史入口
 - 产品页：中文分类与状态、历史期号列表
-- 反馈：保存提示、改选、没玩起来原因选择展开与提交；预览机器人 GET 不产生反馈
+- 反馈：卡片评价入口指向反馈页；反馈页保存提示、改选、没玩起来原因选择展开与提交；预览机器人 GET 不产生反馈
 - 收藏：localStorage 写入/回显/取消，本浏览器限制提示
 - 404：站点版式页（非 JSON）；API 404 统一 `{code,message,request_id,retryable}`
 - 360px：无横向溢出、按钮 ≥44px、正文 ≥16px、控制台无 JS 错误
@@ -94,7 +94,7 @@ python tools/qa_frontend.py         # Playwright：桌面 + 360px，45 项断言
 - [x] 成本账本、日/月上限、配置版本（hash 冻结到 run）、审计日志存在。
 - [x] 备份与隔离恢复演练（本地自动化）；异机副本由 `deploy/backup.ps1` 负责，待部署落实。
 - [~] 主理人 ≤15 分钟复核：CLI 计时已实现；代表候选计时需实际执行。
-- [~] US-01–08 验收记录：US-01/02/03/05 的页面与交互已有 `tools/qa_frontend.py` 自动化证据（45 项通过）；
+- [~] US-01–08 验收记录：US-01/02/03/05 的页面与交互已有 `tools/qa_frontend.py` 自动化证据（46 项通过）；
   E26–E33 中需真人执行的项（两分钟选择、手机实测、复核计时、试读访谈）待试读补充。
 - [ ] 试读结果与继续投入决策：属运营动作。
 

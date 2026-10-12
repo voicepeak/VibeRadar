@@ -9,7 +9,7 @@
 - 日期页：重点推荐优先、方案/门槛/证据可见、往期回顾只含更早日期
 - 空刊页：暂无推荐、不冒充今日新品、历史入口
 - 产品页：中文分类/状态、历史期号
-- 反馈：保存提示、改选、没玩起来原因展开与提交；收藏 localStorage
+- 反馈：卡片评价入口指向反馈页；反馈页保存提示、改选、没玩起来原因展开与提交；收藏 localStorage
 - 404（站点版式 + API 统一错误格式）
 - 360px：无横向溢出、按钮 ≥44px、正文 ≥16px、无 JS 错误
 
@@ -140,8 +140,10 @@ def run(base: str) -> int:
                 check("今日短刊：标识", "短刊" in body)
             if items:
                 check("今日：重点推荐优先", body.find("重点推荐") < body.find("工具与工作流") if "工具与工作流" in body else True)
-                reason = page.locator(".fail-reasons")
-                check("分级：原因区块默认隐藏", not reason.first.is_visible())
+                check(
+                    "卡片：评价入口指向反馈页",
+                    page.locator('a[href^="/feedback/"]').count() > 0,
+                )
                 border = page.evaluate(
                     """() => {
                         const h = document.querySelector('.item-card.highlight');
@@ -201,6 +203,10 @@ def run(base: str) -> int:
         if item_id:
             goto(page, f"{base}/feedback/{item_id}")
             page.wait_for_timeout(500)
+            check(
+                "反馈页：原因区块默认隐藏",
+                not page.locator(f'[data-reasons-for="{item_id}"]').first.is_visible(),
+            )
             page.click('button[data-action="tried"]')
             page.wait_for_timeout(700)
             status = page.inner_text(f'[data-status-for="{item_id}"]')

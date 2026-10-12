@@ -103,11 +103,19 @@ def test_recent_editions_entries_and_no_future_dates(client, seeded, db_path, te
     assert "暂时没有可回顾的往期" in earlier_page.text
 
 
-def test_fail_reasons_hidden_by_default(client, seeded, db_path):
+def test_card_actions_simplified_and_reasons_on_feedback_page(client, seeded, db_path):
     item_id, _ = _first_item(db_path)
-    page = client.get("/d/2026-10-12")
-    assert "fail-reasons" in page.text
-    assert re.search(r'data-reasons-for="[^"]+"\s+hidden', page.text)
+    edition = client.get("/d/2026-10-12")
+    assert 'data-action="tried"' in edition.text
+    assert 'data-action="save"' in edition.text
+    assert 'data-action="interest"' not in edition.text
+    assert "fail-reasons" not in edition.text
+    assert f'href="/feedback/{item_id}"' in edition.text
+
+    feedback = client.get(f"/feedback/{item_id}")
+    assert "fail-reasons" in feedback.text
+    assert re.search(r'data-reasons-for="[^"]+"\s+hidden', feedback.text)
+    assert 'data-action="interest"' in feedback.text
 
 
 def test_pages_render(client, seeded, db_path):
