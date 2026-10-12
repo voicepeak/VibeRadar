@@ -55,3 +55,14 @@ sources:
     config:
       endpoint: https://api.producthunt.com/v2/api/graphql
       request_timeout_seconds: 20
+  producthunt_leaderboard:
+    key: producthunt_leaderboard
+    label: Product Hunt 日榜（公开页）
+    tier: 2
+    enabled: false               # 默认停用；公开页解析仅作候选来源，启用前完成条款与 robots 核查
+    adapter: producthunt_leaderboard
+    license_note: 仅解析公开榜单页的排名条目；不绕过 API 限制，启用前须核查平台条款
+    config:
+      endpoint: "https://www.producthunt.com/leaderboard/daily/{year}/{month}/{day}"
+      timezone: America/Los_Angeles
+      request_timeout_seconds: 20

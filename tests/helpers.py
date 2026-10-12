@@ -143,6 +143,6 @@ def manual_entries(count: int = 6, prefix: str = "https://example.com/?p=") -> l
 
 
 def disable_external_sources(settings) -> None:
-    for key in ("hn", "github", "producthunt"):
+    for key in ("hn", "github", "producthunt", "producthunt_leaderboard"):
         if key in settings.sources.sources:
             settings.sources.sources[key].enabled = False

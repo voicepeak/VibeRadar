@@ -6,6 +6,7 @@ from .github import GitHubAdapter
 from .hn import HNAdapter
 from .manual import ManualAdapter
 from .producthunt import ProductHuntAdapter
+from .producthunt_leaderboard import ProductHuntLeaderboardAdapter, parse_leaderboard_html
 from .runner import ADAPTERS, IngestReport, build_adapter, run_all_sources, run_source
 
 __all__ = [
@@ -18,8 +19,10 @@ __all__ = [
     "IngestReport",
     "ManualAdapter",
     "ProductHuntAdapter",
+    "ProductHuntLeaderboardAdapter",
     "UnsafeURLError",
     "build_adapter",
+    "parse_leaderboard_html",
     "run_all_sources",
     "run_source",
     "safe_get",

@@ -19,12 +19,14 @@ from .github import GitHubAdapter
 from .hn import HNAdapter
 from .manual import ManualAdapter
 from .producthunt import ProductHuntAdapter
+from .producthunt_leaderboard import ProductHuntLeaderboardAdapter
 
 ADAPTERS: dict[str, type[Adapter]] = {
     "hn": HNAdapter,
     "github": GitHubAdapter,
     "manual": ManualAdapter,
     "producthunt": ProductHuntAdapter,
+    "producthunt_leaderboard": ProductHuntLeaderboardAdapter,
 }
 
 
