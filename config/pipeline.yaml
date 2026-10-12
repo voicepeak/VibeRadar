@@ -1,0 +1,41 @@
+# Vibe Radar 管线配置（PRD 9.3 初值）
+# 修改后须通过 schema 校验并生成新版本号；当期运行继续使用冻结版本。
+schema_version: "1"
+timezone: Asia/Shanghai
+schedule:
+  ingest_every_hours: 4          # 全天每 4 小时增量采集（PRD 5.1）
+  cutoff: "07:30"                # 冻结数据截点 T；主窗口 [T-24h, T)
+  review_deadline: "08:35"       # 冻结编辑版本
+  publish: "09:00"               # 公开归档并分发
+  failure_check: "09:05"         # 失败告警与有界重试
+window:
+  main_hours: 24
+  watermark_overlap_hours: 2     # 水位向前重叠 2 小时，唯一键去重
+  late_discovery_days: 7         # 晚发现事件补入上限（PRD 4.3）
+  republish_cooldown_days: 30    # 已刊登产品 30 天内再次入选需重要更新
+limits:
+  candidate_limit: 20            # 复核池上限
+  public_target: 6               # 默认条数
+  public_min: 5                  # 低于 5 条发布短刊
+  public_max: 12                 # 人工扩展硬上限
+  deep_enrich_limit: 40          # 深度处理候选/期
+  strong_model_limit: 12         # 强模型润色上限
+  low_heat_explore_quota: 10     # 深度处理内低热度探索名额
+  classification_batch: 15       # 轻量模型批量条数（10–20）
+  classify_material_chars: 600   # 单条材料截断（中文字符）
+quality_gates:
+  min_confidence: 0.8            # 自动候选分类置信度下限
+  manual_review_confidence: 0.5  # 0.5–0.8 送人工候选
+  max_spam_score: 0.5
+  min_interest: 0.6
+  require_evidence: true
+  require_reachable: true
+rate_limits:
+  anonymous_per_minute: 30
+  ip_per_minute: 300
+retention:
+  source_metadata_days: 90
+  evidence_excerpt_max_chars: 200
+  anonymous_event_days: 90
+  rate_limit_identity_hours: 24
+  audit_days: 365
