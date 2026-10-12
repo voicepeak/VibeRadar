@@ -157,3 +157,4 @@ def test_static_export_matches_public_page_structure(session, temp_settings):
         assert "评价与报错" in html
         assert 'data-action="interest"' not in html
         assert html.count('data-action="tried"') == 8  # 每条只渲染一次，重点条目不重复
+        assert "/admin/llm" not in html  # 设置入口不出现在公开静态导出

@@ -61,5 +61,7 @@ def _stable_env(monkeypatch):
     monkeypatch.setenv("VIBERADAR_LLM_PROVIDER", "mock")
     monkeypatch.delenv("VIBERADAR_FEISHU_WEBHOOK_URL", raising=False)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("VIBERADAR_ADMIN_TOKEN", raising=False)
+    monkeypatch.delenv("VIBERADAR_LLM_API_TOKEN", raising=False)
     monkeypatch.setenv("VIBERADAR_SITE_URL", "http://testserver")
     yield

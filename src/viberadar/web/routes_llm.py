@@ -1,8 +1,8 @@
 """LLM 配置窗口与服务端点。
 
-- /admin/llm：本地管理页（浏览器内输入管理令牌；页面本身不含密钥）。
-- /api/admin/llm/*：配置读写与连通性测试（X-Admin-Token 或 Bearer）。
-- /api/llm/chat、/api/llm/status：供其他工具调用的内部端点（令牌保护）。
+- /admin/llm：设置页；直接填写 API Key，无需令牌/环境变量（公网由部署边界/Caddy 屏蔽）。
+- /api/admin/llm/*：配置读写与连通性测试（同上，默认开放）。
+- /api/llm/chat、/api/llm/status：供其他工具调用（本机直连免令牌；远程需 VIBERADAR_LLM_API_TOKEN）。
 
 密钥只写 data/llm.json；接口响应一律掩码。
 """
@@ -81,7 +81,15 @@ def _error(request: Request, code: str, message: str, status: int, retryable: bo
 
 def _configured_token(request: Request) -> str:
     settings = request.app.state.settings
-    return settings.admin_token or settings.llm_api_token or ""
+    return settings.llm_api_token or settings.admin_token or ""
+
+
+def _trusted_local(request: Request) -> bool:
+    """本机直连（回环地址且未经代理）访问服务端点免令牌；远程需 VIBERADAR_LLM_API_TOKEN。"""
+    if request.headers.get("x-forwarded-for") or request.headers.get("x-real-ip"):
+        return False
+    host = request.client.host if request.client else ""
+    return host in ("127.0.0.1", "::1", "localhost")
 
 
 def _token_ok(request: Request) -> bool:
@@ -96,15 +104,26 @@ def _token_ok(request: Request) -> bool:
     return bool(header) and secrets.compare_digest(header, expected)
 
 
-def _require_token(request: Request):
+def _require_service_token(request: Request):
+    """仅 /api/llm/* 服务端点使用；设置页与管理 API 无需令牌（靠部署边界保护）。"""
+    if _trusted_local(request):
+        return None
     if not _configured_token(request):
-        return _error(request, "llm_admin_disabled", "未配置 VIBERADAR_ADMIN_TOKEN（或 VIBERADAR_LLM_API_TOKEN）", 503)
+        return _error(request, "llm_auth_required", "远程调用需要 VIBERADAR_LLM_API_TOKEN（本机直连免）", 503)
     if not _token_ok(request):
-        return _error(request, "unauthorized", "管理令牌无效", 401)
+        return _error(request, "unauthorized", "令牌无效", 401)
     return None
 
 
 # ---------- 管理页 ----------
+
+
+@router.get("/admin", include_in_schema=False)
+@router.get("/settings", include_in_schema=False)
+def admin_redirect():
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse("/admin/llm", status_code=302)
 
 
 @router.get("/admin/llm", include_in_schema=False)
@@ -124,9 +143,6 @@ def admin_llm_page(request: Request):
 
 @router.get("/api/admin/llm/config")
 def get_llm_config(request: Request):
-    denied = _require_token(request)
-    if denied is not None:
-        return denied
     settings = request.app.state.settings
     from viberadar.llm import load_store
 
@@ -149,9 +165,6 @@ def get_llm_config(request: Request):
 
 @router.put("/api/admin/llm/config")
 async def put_llm_config(request: Request, session: Session = Depends(get_session)):
-    denied = _require_token(request)
-    if denied is not None:
-        return denied
     settings = request.app.state.settings
     from viberadar.llm import load_store
 
@@ -226,9 +239,6 @@ async def put_llm_config(request: Request, session: Session = Depends(get_sessio
 
 @router.delete("/api/admin/llm/profiles/{name}")
 def delete_llm_profile(name: str, request: Request, session: Session = Depends(get_session)):
-    denied = _require_token(request)
-    if denied is not None:
-        return denied
     settings = request.app.state.settings
     from viberadar.llm import load_store
 
@@ -248,9 +258,6 @@ def delete_llm_profile(name: str, request: Request, session: Session = Depends(g
 
 @router.post("/api/admin/llm/test")
 async def test_llm_profile(request: Request):
-    denied = _require_token(request)
-    if denied is not None:
-        return denied
     settings = request.app.state.settings
     from viberadar.llm import load_store
 
@@ -310,7 +317,7 @@ def _service_gateway(request: Request, profile_name: str | None):
 
 @router.post("/api/llm/chat")
 async def llm_chat(request: Request):
-    denied = _require_token(request)
+    denied = _require_service_token(request)
     if denied is not None:
         return denied
     settings = request.app.state.settings
@@ -367,7 +374,7 @@ async def llm_chat(request: Request):
 
 @router.get("/api/llm/status")
 def llm_status(request: Request):
-    denied = _require_token(request)
+    denied = _require_service_token(request)
     if denied is not None:
         return denied
     settings = request.app.state.settings

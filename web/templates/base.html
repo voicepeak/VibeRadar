@@ -18,6 +18,7 @@
         <a href="/">{{ t('nav.today') }}</a>
         <a href="/saved">{{ t('nav.saved') }}</a>
         <a href="/rss.xml">{{ t('nav.rss') }}</a>
+        {% if request %}<a href="/admin/llm" class="nav-settings">{{ t('nav.settings') }}</a>{% endif %}
         <span class="lang-switch" aria-label="{{ t('lang.switch') }}">
           <a href="{{ lang_url('zh') }}" class="lang-link{% if locale == 'zh' %} active{% endif %}" hreflang="zh-CN">中</a>
           <a href="{{ lang_url('en') }}" class="lang-link{% if locale == 'en' %} active{% endif %}" hreflang="en">EN</a>

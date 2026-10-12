@@ -22,19 +22,8 @@
 {% endblock %}
 {% block content %}
 <h1 style="font-size: 22px;">LLM 配置窗口</h1>
-<p class="muted">配置保存在数据目录的 <code>llm.json</code>（本地文件、密钥不进数据库）。其他工具可调用
-  <code>POST /api/llm/chat</code> 复用同一份配置。</p>
-
-<section class="card">
-  <div class="admin-row">
-    <label style="display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);">
-      管理令牌（VIBERADAR_ADMIN_TOKEN）
-      <input id="token" type="password" autocomplete="off" placeholder="输入令牌后加载">
-    </label>
-    <button class="btn" id="load-btn" type="button">加载配置</button>
-    <span id="gate-msg" class="muted"></span>
-  </div>
-</section>
+<p class="muted">直接在下方填写 API Key 并保存即可（写入数据目录的 <code>llm.json</code>，不经过环境变量）。
+  其他工具可调用 <code>POST /api/llm/chat</code> 复用同一份配置。</p>
 
 <div id="panel" hidden>
   <section class="card" style="margin-top: 14px;">
@@ -100,7 +89,6 @@
 (function () {
   var state = { config: null, current: null };
   var $ = function (id) { return document.getElementById(id); };
-  function token() { return $("token").value.trim(); }
   function log(msg, kind) {
     var el = $("log");
     el.textContent = msg;
@@ -109,7 +97,7 @@
   function api(path, options) {
     options = options || {};
     options.headers = Object.assign(
-      { "X-Admin-Token": token(), "Content-Type": "application/json" },
+      { "Content-Type": "application/json" },
       options.headers || {}
     );
     return fetch(path, options).then(function (resp) {
@@ -181,15 +169,16 @@
         wrap.dataset.stage = el.dataset.stage;
         el.replaceWith(wrap);
       }
-      wrap.value = stages[wrap.dataset.stage] || "fast";
+      var smartDefault = wrap.dataset.stage === "enrich" || wrap.dataset.stage === "compose"
+        ? "strong"
+        : "fast";
+      wrap.value = stages[wrap.dataset.stage] || smartDefault;
     });
   }
   function load() {
-    sessionStorage.setItem("vr_admin_token", token());
     api("/api/admin/llm/config").then(function (config) {
       state.config = config;
       $("panel").hidden = false;
-      $("gate-msg").textContent = "已加载：" + config.path;
       var select = $("preset-select");
       select.innerHTML = '<option value="">— 选择预设 —</option>';
       Object.keys(config.presets || {}).forEach(function (key) {
@@ -199,8 +188,10 @@
         select.appendChild(option);
       });
       renderProfiles();
-      log("配置已加载。", "ok");
-    }).catch(function (err) { log("加载失败：" + err.message, "err"); });
+      log("配置已加载：" + config.path, "ok");
+    }).catch(function (err) {
+      log("加载失败：" + err.message, "err");
+    });
   }
   function collectProfile() {
     return {
@@ -271,8 +262,6 @@
     if (!$("pf-label").value) { $("pf-label").value = preset.label; }
     if (!$("pf-name").value) { $("pf-name").value = key; }
   }
-  $("load-btn").addEventListener("click", load);
-  $("token").addEventListener("keydown", function (event) { if (event.key === "Enter") { load(); } });
   $("profile-select").addEventListener("change", function () {
     state.current = $("profile-select").value;
     var found = (state.config.profiles || []).filter(function (p) { return p.name === state.current; })[0];
@@ -288,8 +277,7 @@
   $("delete-btn").addEventListener("click", deleteProfile);
   $("save-stages-btn").addEventListener("click", saveStages);
   $("preset-select").addEventListener("change", function () { applyPreset(this.value); });
-  var saved = sessionStorage.getItem("vr_admin_token");
-  if (saved) { $("token").value = saved; load(); }
+  load();
 })();
 </script>
 {% endblock %}

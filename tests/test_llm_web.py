@@ -53,20 +53,60 @@ def _openai_transport(seen: list | None = None):
 HEADERS = {"X-Admin-Token": "sekret-token"}
 
 
-def test_admin_disabled_without_token_env(client):
-    resp = client.get("/api/admin/llm/config", headers=HEADERS)
-    assert resp.status_code == 503
-    assert resp.json()["code"] == "llm_admin_disabled"
+def test_trusted_local_detection():
+    from types import SimpleNamespace
+
+    from viberadar.web.routes_llm import _trusted_local
+
+    def fake(host, headers=None):
+        return SimpleNamespace(client=SimpleNamespace(host=host), headers=headers or {})
+
+    assert _trusted_local(fake("127.0.0.1"))
+    assert _trusted_local(fake("::1"))
+    assert not _trusted_local(fake("192.168.1.10"))
+    assert not _trusted_local(fake("127.0.0.1", {"x-forwarded-for": "1.2.3.4"}))
 
 
-def test_admin_requires_valid_token(client, monkeypatch):
-    _enable(monkeypatch)
-    denied = client.get("/api/admin/llm/config")
-    assert denied.status_code == 401
-    allowed = client.get("/api/admin/llm/config", headers=HEADERS)
-    assert allowed.status_code == 200
-    body = allowed.json()
+def test_admin_config_fully_open_no_token(client):
+    """设置页与管理 API 不依赖任何令牌/环境变量，直接可用。"""
+    resp = client.get("/api/admin/llm/config")
+    assert resp.status_code == 200
+    body = resp.json()
     assert body["profiles"] == [] and body["presets"]
+
+    saved = client.put(
+        "/api/admin/llm/config",
+        json={
+            "profiles": [
+                {
+                    "name": "quick",
+                    "protocol": "openai",
+                    "base_url": "https://api.deepseek.com",
+                    "api_key": "sk-quick-123456",
+                    "model_fast": "deepseek-chat",
+                    "model_strong": "deepseek-reasoner",
+                }
+            ]
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["profiles"][0]["api_key_masked"]
+
+
+def test_chat_endpoint_allows_trusted_local_without_token(app, client, monkeypatch, temp_settings):
+    monkeypatch.setenv("VIBERADAR_LLM_PROVIDER", "auto")
+    monkeypatch.setattr("viberadar.web.routes_llm._trusted_local", lambda request: True)
+    _save_profile(temp_settings)
+    app.state.llm_transport = _openai_transport()
+    resp = client.post("/api/llm/chat", json={"user": "hi", "json_mode": True})
+    assert resp.status_code == 200 and resp.json()["ok"] is True
+
+
+def test_settings_link_in_live_nav(client):
+    home = client.get("/")
+    assert home.status_code == 200
+    assert 'href="/admin/llm"' in home.text
+    assert "设置" in home.text
 
 
 def test_admin_page_renders(client, monkeypatch):
@@ -75,6 +115,7 @@ def test_admin_page_renders(client, monkeypatch):
     assert resp.status_code == 200
     assert "LLM 配置窗口" in resp.text
     assert "noindex" in resp.text
+    assert "管理令牌" not in resp.text
 
 
 def test_admin_config_roundtrip_masks_and_keeps_key(client, monkeypatch, temp_settings):
