@@ -10,12 +10,16 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+*.egg-info/
+build/
+dist/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 
 # Local runtime artifacts
 .local/
+data/
 logs/
 *.log
 *.sqlite
