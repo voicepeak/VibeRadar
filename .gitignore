@@ -33,3 +33,9 @@ logs/
 ~$*.docx
 Thumbs.db
 .DS_Store
+
+# Local start/stop scripts
+start.cmd
+start.ps1
+stop.cmd
+stop.ps1
