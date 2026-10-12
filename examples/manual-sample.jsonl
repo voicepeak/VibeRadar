@@ -1,0 +1,2 @@
+{"title": "Context Garden", "url": "https://example.com/app", "description": "把编码 agent 的会话上下文整理成可回滚的变更记录；支持上下文快照、回滚与配额检查，面向 agent 工作流调试。", "published_at": "2026-10-12T05:00:00+08:00", "author": "example"}
+{"title": "MCP Forge", "url": "https://github.com/example/mcp-forge", "description": "MCP server 工具集：把内部工具快速包装成 MCP 接口给编码 agent 使用，包含调用日志与权限检查。", "published_at": "2026-10-12T04:30:00+08:00"}
