@@ -118,6 +118,7 @@ class PipelineConfig(_Model):
 class CategoryDef(_Model):
     key: str
     label: str
+    label_en: str = ""
     description: str = ""
 
 
@@ -127,7 +128,11 @@ class TaxonomyConfig(_Model):
     product_category_keys: list[str]
     max_tags_per_product: int = 3
 
-    def labels(self) -> dict[str, str]:
+    def labels(self, locale: str = "zh") -> dict[str, str]:
+        from viberadar.i18n import normalize_locale
+
+        if normalize_locale(locale) == "en":
+            return {c.key: (c.label_en or c.label) for c in self.categories}
         return {c.key: c.label for c in self.categories}
 
 

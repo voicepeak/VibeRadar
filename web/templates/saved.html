@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}本浏览器收藏 · Vibe Radar{% endblock %}
+{% block title %}{{ t('saved.title') }} · Vibe Radar{% endblock %}
 {% block content %}
   <section class="edition-head">
-    <h1>收藏</h1>
-    <p class="muted">收藏仅保存在本浏览器的 localStorage，不会上传完整收藏夹，也不跨设备同步。清除缓存或更换设备后无法找回。</p>
+    <h1>{{ t('saved.title') }}</h1>
+    <p class="muted">{{ t('saved.desc') }}</p>
   </section>
   <div id="saved-list" class="saved-list">
-    <p class="muted" id="saved-empty">暂无收藏。回到 <a href="/">今日精选</a> 添加想体验的产品。</p>
+    <p class="muted" id="saved-empty">{{ t('saved.empty_prefix') }} <a href="/">{{ t('saved.empty_link') }}</a> {{ t('saved.empty_suffix') }}</p>
   </div>
 {% endblock %}

@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from viberadar.contracts import (
@@ -21,11 +22,12 @@ from viberadar.contracts import (
     new_id,
     utcnow,
 )
+from viberadar.i18n import localize_card_content
 from viberadar.settings import Settings, get_settings
 from viberadar.rank import select_public_items
 from viberadar.rank.diversity import DiversityItem
 from viberadar.store import repo_editions, repo_ops, repo_pipeline, repo_products
-from viberadar.store.models import CandidateRow, EditionRow
+from viberadar.store.models import CandidateRow, EditionItemRow, EditionRow
 
 HARD_GATE_REASONS = ("入口不可达", "无入口核查记录", "无富化结果")
 REQUIRED_EVIDENCE = {"doc_checked", "human_tested", "probe_tested"}
@@ -169,7 +171,7 @@ def freeze_edition(
     for idx, candidate in enumerate(selection.candidates):
         content = dict(candidate.content_json or {})
         edits = candidate.curator_edits or {}
-        for key in ("one_liner", "why_interesting", "steps"):
+        for key in ("one_liner", "why_interesting", "user_story", "steps"):
             if edits.get(key):
                 content[key] = edits[key]
         section = "creative" if content.get("category") == "creative-toy" else "tool"
@@ -304,17 +306,24 @@ def create_correction(
     return edition
 
 
-def build_edition_view(session: Session, edition: EditionRow) -> EditionView:
+def build_edition_view(
+    session: Session, edition: EditionRow, locale: str = "zh"
+) -> EditionView:
     revision = edition.revision
     if edition.status == EditionStatus.PUBLISHED.value or edition.mode == "human":
         revision = repo_editions.latest_revision(session, edition.id) or revision
     rows = repo_editions.list_items(
         session, edition.id, revision=repo_editions.latest_revision(session, edition.id) or revision
     )
+    labels = get_settings().taxonomy.labels(locale)
     items = []
     for row in rows:
         content = dict(row.content_json or {})
         product = repo_products.get_product(session, row.product_id)
+        category = content.get("category", "unknown")
+        copy = localize_card_content(
+            content, locale, labels.get(category, content.get("category_label", ""))
+        )
         items.append(
             EditionItemView(
                 id=row.id,
@@ -324,18 +333,19 @@ def build_edition_view(session: Session, edition: EditionRow) -> EditionView:
                 section=row.section,
                 product_id=row.product_id,
                 slug=product.slug if product else row.product_id,
-                name=content.get("name") or (product.name if product else ""),
-                category=content.get("category", "unknown"),
-                category_label=content.get("category_label", ""),
-                one_liner=content.get("one_liner", ""),
-                why_interesting=content.get("why_interesting", ""),
+                name=copy["name"] or (product.name if product else ""),
+                category=category,
+                category_label=copy["category_label"],
+                one_liner=copy["one_liner"],
+                user_story=copy["user_story"],
+                why_interesting=copy["why_interesting"],
                 mode=content.get("mode", "setup"),
-                access_text=content.get("access_text", ""),
-                steps=list(content.get("steps") or []),
+                access_text=copy["access_text"],
+                steps=list(copy["steps"]),
                 time_promise=content.get("time_promise"),
-                mobile_note=content.get("mobile_note"),
+                mobile_note=copy["mobile_note"],
                 evidence_status=content.get("evidence_status", "unverified"),
-                source_links=list(content.get("source_links") or []),
+                source_links=list(copy["source_links"]),
                 checked_at=_parse_dt(content.get("checked_at")),
                 final_score=float(row.final_score or 0),
                 signals=dict(row.signals or {}),
@@ -360,6 +370,79 @@ def build_edition_view(session: Session, edition: EditionRow) -> EditionView:
         source_coverage=edition.source_coverage,
         items=items,
     )
+
+
+def latest_published(session: Session) -> EditionRow | None:
+    """最近一期已公开期号（首页与静态导出共用）。"""
+    return session.scalar(
+        select(EditionRow)
+        .where(EditionRow.status == EditionStatus.PUBLISHED.value)
+        .order_by(EditionRow.date.desc())
+        .limit(1)
+    )
+
+
+def highlights(view: EditionView) -> list[EditionItemView]:
+    """重点推荐 1–2 条优先展示（PRD 4.6）。"""
+    return [item for item in view.items if item.highlight]
+
+
+def group_sections(view: EditionView) -> list[tuple[str, list[EditionItemView]]]:
+    """其余条目按 section key 分组（tool/creative）；空分组隐藏，重点条目不重复出现。"""
+    rest = [item for item in view.items if not item.highlight]
+    tools = [item for item in rest if item.section != "creative"]
+    creative = [item for item in rest if item.section == "creative"]
+    sections: list[tuple[str, list[EditionItemView]]] = []
+    if tools:
+        sections.append(("tool", tools))
+    if creative:
+        sections.append(("creative", creative))
+    return sections
+
+
+def recent_editions(
+    session: Session,
+    exclude_id: str | None = None,
+    limit: int = 7,
+    before_date: date | None = None,
+) -> list[dict]:
+    """最近期号入口（PRD 4.6）：日期、条数、内容状态与简介。
+
+    before_date 用于日期页“往期回顾”，只展示更早的期号。
+    """
+    stmt = (
+        select(EditionRow)
+        .where(EditionRow.status == EditionStatus.PUBLISHED.value)
+        .order_by(EditionRow.date.desc())
+        .limit(limit + 1)
+    )
+    if before_date is not None:
+        stmt = stmt.where(EditionRow.date < before_date)
+    rows = list(session.scalars(stmt))
+    result: list[dict] = []
+    for edition in rows:
+        if exclude_id and edition.id == exclude_id:
+            continue
+        revision = repo_editions.latest_revision(session, edition.id) or edition.revision
+        count = session.scalar(
+            select(func.count())
+            .select_from(EditionItemRow)
+            .where(
+                EditionItemRow.edition_id == edition.id,
+                EditionItemRow.revision == revision,
+            )
+        )
+        result.append(
+            {
+                "date": edition.date,
+                "count": int(count or 0),
+                "content_status": edition.content_status,
+                "intro": edition.intro or "",
+            }
+        )
+        if len(result) >= limit:
+            break
+    return result
 
 
 def _parse_dt(value) -> datetime:  # noqa: ANN001

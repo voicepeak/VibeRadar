@@ -800,9 +800,11 @@ def _store_enrichment(session: Session, product, event, outcome: EnrichOutcome) 
         "try_guide_json": {
             "one_liner": enrichment.one_liner,
             "why_interesting": enrichment.why_interesting,
+            "user_story": enrichment.user_story,
             "mode": enrichment.mode.value,
             "steps": [s.text for s in enrichment.steps],
             "time_promise": enrichment.time_promise,
+            "en": enrichment.en.model_dump(mode="json") if enrichment.en else None,
         },
         "verification": enrichment.verification_status.value,
         "claim_refs": [c.model_dump() for c in enrichment.claims],
@@ -855,16 +857,25 @@ def _card_content(
             "category_label": label,
             "one_liner": enrichment.one_liner,
             "why_interesting": enrichment.why_interesting,
+            "user_story": enrichment.user_story,
             "mode": enrichment.mode.value,
             "steps": [s.text for s in enrichment.steps],
             "access_text": enrichment.access.display_text(),
+            "access_json": enrichment.access.model_dump(mode="json"),
             "time_promise": enrichment.time_promise,
             "mobile_note": mobile_note,
+            "mobile_note_key": (
+                "mobile.desktop_required"
+                if enrichment.access.mobile_support == MobileSupport.UNSUPPORTED
+                else "mobile.unknown"
+            ),
             "evidence_status": enrichment.verification_status.value,
             "checked_at": enrichment.access.checked_at.isoformat(),
             "source_links": sources,
             "evidence_ids": outcome.evidence_ids if outcome else [],
         }
+        if enrichment.en is not None:
+            card["i18n"] = {"en": enrichment.en.model_dump(mode="json")}
         if enrichment.verification_status.value == "failed":
             card["access_text"] = "入口未核查通过"
     else:
@@ -874,11 +885,13 @@ def _card_content(
             "category_label": label,
             "one_liner": (entry.raw_item.description or entry.product.name)[:40],
             "why_interesting": (entry.raw_item.description or "等待补充证据")[:160],
+            "user_story": "",
             "mode": "setup",
             "steps": [],
             "access_text": "收费未确认",
             "time_promise": None,
             "mobile_note": "手机体验未确认",
+            "mobile_note_key": "mobile.unknown",
             "evidence_status": "unverified",
             "checked_at": utcnow().isoformat(),
             "source_links": sources,

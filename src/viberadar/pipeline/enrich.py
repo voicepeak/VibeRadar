@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from viberadar.contracts import (
     AccessInfo,
+    CardCopyEn,
     Claim,
     Enrichment,
     Evidence,
@@ -28,6 +29,14 @@ from viberadar.contracts import (
     VerificationStatus,
     new_id,
     utcnow,
+)
+from viberadar.i18n import (
+    default_steps,
+    fallback_one_liner,
+    fallback_user_story,
+    fallback_why,
+    has_cjk,
+    is_copy_pure,
 )
 from viberadar.llm import COMMON_SYSTEM, LLMGateway
 from viberadar.settings import Settings, get_settings
@@ -274,39 +283,82 @@ def create_evidence(
     return evidence
 
 
+def _short(text: str, limit: int) -> str:
+    """按标点/词边界截断，避免出现半个英文单词。"""
+    flat = re.sub(r"\s+", " ", text or "").strip()
+    if len(flat) <= limit:
+        return flat
+    cut = flat[:limit]
+    for sep in ("。", "！", "？", "；", "，", ". ", "! ", "? ", "; ", ", ", " "):
+        idx = cut.rfind(sep)
+        if idx >= int(limit * 0.55):
+            cut = cut[:idx]
+            break
+    return cut.rstrip("，,、;；:：- ").strip()
+
+
+def _category_label(product: ProductRow, settings: Settings | None) -> str:
+    settings = settings or get_settings()
+    category = product.category or ""
+    return settings.taxonomy.labels("zh").get(category, category) or "AI 产品"
+
+
+def _template_copy(
+    product: ProductRow,
+    raw: RawItemRow,
+    mode: TryMode,
+    entry: str,
+    label: str,
+) -> tuple[str, str, str, list[str], CardCopyEn]:
+    """生成中英两套模板文案；除产品名/URL 外不混排语言。"""
+    base = re.sub(r"\s+", " ", (raw.description or "").strip()) or (
+        product.summary or product.name
+    )
+    base_is_zh = has_cjk(base)
+
+    if base_is_zh:
+        zh_one = _short(base, 40) or fallback_one_liner("zh", label)
+        zh_why = _short(base, 160) or fallback_why("zh", label)
+        zh_story = fallback_user_story("zh", mode.value, label)
+    else:
+        zh_one = fallback_one_liner("zh", label)
+        zh_why = fallback_why("zh", label)
+        zh_story = fallback_user_story("zh", mode.value, label)
+
+    if base and not base_is_zh:
+        en_one = _short(base, 80)
+        en_why = _short(base, 160)
+        en_story = fallback_user_story("en", mode.value, label)
+    else:
+        en_one = fallback_one_liner("en", label)
+        en_why = fallback_why("en", label)
+        en_story = fallback_user_story("en", mode.value, label)
+
+    zh_steps = default_steps(mode.value, "zh", entry or None)
+    en_steps = default_steps(mode.value, "en", entry or None)
+    en = CardCopyEn(
+        one_liner=en_one or product.name[:80],
+        why_interesting=en_why,
+        user_story=en_story,
+        steps=en_steps[:4],
+    )
+    return zh_one, zh_why, zh_story, zh_steps, en
+
+
 def template_enrichment(
     product: ProductRow,
     raw: RawItemRow,
     access: AccessInfo,
     mode: TryMode,
     evidence_ids: list[str],
+    settings: Settings | None = None,
 ) -> Enrichment:
-    """确定性模板：只使用已抓取事实；无依据的字段保持 unknown/未验证。"""
-    base_text = (raw.description or "").strip() or (product.summary or product.name)
-    one_liner = base_text[:40]
-    why = base_text[:160] if base_text else f"{product.name} 的新发布，等待补充证据"
+    """确定性模板：只使用已抓取事实；中英双语，无依据的字段保持 unknown/未验证。"""
+    label = _category_label(product, settings)
     entry = raw.target_url or raw.source_url or ""
-
-    if mode == TryMode.SETUP:
-        steps = [
-            TryStep(text=f"打开仓库或官网：{entry}"),
-            TryStep(text="阅读 README 的安装与运行说明"),
-            TryStep(text="按文档完成本地安装后启动"),
-            TryStep(text="准备时间未验证，安装前确认平台与依赖"),
-        ]
-    elif mode == TryMode.DEMO:
-        steps = [
-            TryStep(text=f"打开项目页面：{entry}"),
-            TryStep(text="查看公开演示或截图中呈现的核心效果"),
-            TryStep(text="对照页面说明判断是否符合自己的使用场景"),
-            TryStep(text="若需安装或付费，先确认门槛再决定"),
-        ]
-    else:  # direct（需人工确认；模板不主动使用）
-        steps = [
-            TryStep(text=f"打开入口：{entry}"),
-            TryStep(text="按页面提示开始核心操作"),
-            TryStep(text="观察页面反馈是否符合描述"),
-        ]
+    zh_one, zh_why, zh_story, zh_steps, en = _template_copy(
+        product, raw, mode, entry, label
+    )
 
     claims: list[Claim] = []
     if access.pricing != Pricing.UNKNOWN and evidence_ids:
@@ -327,10 +379,12 @@ def template_enrichment(
         else VerificationStatus.UNVERIFIED
     )
     return Enrichment(
-        one_liner=one_liner or product.name[:40],
-        why_interesting=why,
+        one_liner=zh_one[:40] or product.name[:40],
+        why_interesting=zh_why,
+        user_story=zh_story,
+        en=en,
         mode=mode,
-        steps=steps,
+        steps=[TryStep(text=text) for text in zh_steps[:4]],
         access=access,
         claims=claims,
         verification_status=verification,
@@ -340,6 +394,42 @@ def template_enrichment(
         prompt_version=None,
         model_version=None,
     )
+
+
+def ensure_bilingual(candidate: Enrichment, fallback: Enrichment) -> Enrichment:
+    """补齐模型输出中缺失或不纯净的字段，保证两种语言模式都不混排。"""
+    updates: dict = {}
+    if not is_copy_pure(candidate.one_liner, "zh"):
+        updates["one_liner"] = fallback.one_liner
+    if not is_copy_pure(candidate.why_interesting, "zh"):
+        updates["why_interesting"] = fallback.why_interesting
+    if not is_copy_pure(candidate.user_story, "zh"):
+        updates["user_story"] = fallback.user_story
+    if not (
+        candidate.steps and all(is_copy_pure(step.text, "zh") for step in candidate.steps)
+    ):
+        updates["steps"] = fallback.steps
+
+    en = candidate.en
+    if en is None:
+        updates["en"] = fallback.en
+    else:
+        en_updates: dict = {}
+        if not is_copy_pure(en.one_liner, "en"):
+            en_updates["one_liner"] = fallback.en.one_liner if fallback.en else en.one_liner
+        if not is_copy_pure(en.why_interesting, "en"):
+            en_updates["why_interesting"] = (
+                fallback.en.why_interesting if fallback.en else en.why_interesting
+            )
+        if not is_copy_pure(en.user_story, "en"):
+            en_updates["user_story"] = (
+                fallback.en.user_story if fallback.en else en.user_story
+            )
+        if not (en.steps and all(is_copy_pure(step, "en") for step in en.steps)):
+            en_updates["steps"] = fallback.en.steps if fallback.en else en.steps
+        if en_updates:
+            updates["en"] = en.model_copy(update=en_updates)
+    return candidate.model_copy(update=updates) if updates else candidate
 
 
 def enrich_product(
@@ -382,7 +472,7 @@ def enrich_product(
 
     access = infer_access(page, raw)
     mode = decide_mode(raw, page)
-    enrichment = template_enrichment(product, raw, access, mode, evidence_ids)
+    enrichment = template_enrichment(product, raw, access, mode, evidence_ids, settings)
 
     if page is not None and not page.reachable:
         enrichment = enrichment.model_copy(
@@ -404,7 +494,7 @@ def enrich_product(
             },
             model="deepseek-pro",
             stage="enrich",
-            max_output_tokens=1500,
+            max_output_tokens=2400,
             mock_response=mock_guide_response,
         )
         if response.ok and response.data:
@@ -412,12 +502,13 @@ def enrich_product(
                 candidate = Enrichment(**response.data)
                 errors = candidate.claim_evidence_errors(set(evidence_ids))
                 if not errors:
-                    # 不得把未验证状态升级
+                    # 不得把未验证状态升级；缺语言/语言不纯的字段用模板补齐
+                    candidate = ensure_bilingual(candidate, enrichment)
                     enrichment = candidate.model_copy(
                         update={
                             "verification_status": enrichment.verification_status,
                             "time_promise": None,
-                            "prompt_version": "guide-v1",
+                            "prompt_version": "guide-v2",
                             "model_version": "deepseek-pro",
                         }
                     )

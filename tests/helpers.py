@@ -70,6 +70,13 @@ class StubLLM(LLMGateway):
                 data={
                     "one_liner": "把 agent 会话上下文变成可回滚记录",
                     "why_interesting": "可以对照修改前后的上下文变化。",
+                    "user_story": "你是排查 agent 异常的开发者：回滚一次会话上下文，对照改动前后的差异定位问题。",
+                    "en": {
+                        "one_liner": "Turns an agent session context into a rollbackable record.",
+                        "why_interesting": "Compare context changes before and after each edit.",
+                        "user_story": "You debug a misbehaving agent: roll back one session context and diff the before/after to locate the problem.",
+                        "steps": ["Open the project page", "Watch the demo"],
+                    },
                     "mode": "demo",
                     "steps": [{"text": "打开项目页面"}, {"text": "查看演示效果"}],
                     "access": {

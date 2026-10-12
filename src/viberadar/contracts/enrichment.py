@@ -125,9 +125,30 @@ class InterestAssessment(StrictModel):
     needs_review: bool = False
 
 
+class CardCopyEn(StrictModel):
+    """英文模式卡片文案（与中文主字段一一对应；不混排中文）。"""
+
+    one_liner: str
+    why_interesting: str = ""
+    user_story: str = ""
+    steps: list[str] = Field(default_factory=list, max_length=4)
+
+    @field_validator("one_liner")
+    @classmethod
+    def _one_liner_len(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("one_liner(en) 不能为空")
+        if len(v) > 120:
+            raise ValueError("one_liner(en) 必须 ≤120 字符")
+        return v
+
+
 class Enrichment(StrictModel):
     one_liner: str                      # 中文一句话描述 ≤40 字
     why_interesting: str
+    user_story: str = ""                # 中文具体用户故事（谁在什么场景用它得到什么）
+    en: CardCopyEn | None = None        # 英文模式文案
     mode: TryMode
     steps: list[TryStep] = Field(default_factory=list, max_length=4)
     access: AccessInfo

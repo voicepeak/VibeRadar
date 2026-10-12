@@ -1,8 +1,12 @@
-任务：基于已核查证据生成中文卡片。
-输出one_liner<=40字、why_interesting、mode(direct/demo/setup)、
-steps最多4项、access结构、claims[{text,evidence_ids}]。
-步骤写“打开哪里、第一步、看什么、限制”。
-没有免费/登录/平台证据时对应字段为unknown/null。
+任务：基于已核查证据生成中英双语卡片与用户故事。
+中文输出（除产品名、品牌名、平台名外不得出现英文句子）：
+- one_liner：中文一句话 ≤40 字；
+- why_interesting：中文 1–2 句；
+- user_story：中文具体用户故事：谁、在什么场景、用它做什么、得到什么结果；必须基于证据，不得虚构用户、数据或结果；
+- steps：中文最多 4 项，写“打开哪里、第一步、看什么、限制”。
+英文输出 en：与上面同结构的英文版本（one_liner/why_interesting/user_story/steps），不得混排中文。
+另需输出：mode(direct/demo/setup)、access 结构、claims[{text,evidence_ids}]。
+没有免费/登录/平台证据时对应字段为 unknown/null。
 未经实际体验记录不能写“已实测”或“30秒完成安装”。
 输入：product、event、access_evidence、verification、evidence[]。
 输出JSON必须符合Enrichment schema；无需额外文本。

@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from viberadar.contracts import (
     AccessInfo,
+    CardCopyEn,
     Claim,
     Classification,
     ClassificationBatch,
@@ -107,6 +108,27 @@ def test_enrichment_one_liner_length():
             steps=[],
             access=access,
         )
+
+
+def test_enrichment_bilingual_copy_and_user_story():
+    access = AccessInfo(checked_at=datetime(2026, 10, 12, tzinfo=timezone.utc))
+    enrichment = Enrichment(
+        one_liner="把会话上下文变成可回滚记录",
+        why_interesting="可以对照修改前后的变化。",
+        user_story="你是排查异常的开发者：回滚一次会话定位问题。",
+        en=CardCopyEn(
+            one_liner="Turns a session context into a rollbackable record.",
+            why_interesting="Diff context changes.",
+            user_story="You debug an agent: roll back one session to locate the issue.",
+            steps=["Open", "Try"],
+        ),
+        mode=TryMode.DEMO,
+        steps=[],
+        access=access,
+    )
+    assert enrichment.en is not None and enrichment.user_story
+    with pytest.raises(ValidationError):
+        CardCopyEn(one_liner="x" * 121)
 
 
 def test_enrichment_time_promise_requires_verified_direct():

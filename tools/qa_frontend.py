@@ -86,11 +86,14 @@ def assert_common(page, label: str) -> None:  # noqa: ANN001
     check(f"{label}: 正文字号 ≥16px", m["bodyFont"] >= 16, m["bodyFont"])
 
 
-def fetch_edition(page, day: date):  # noqa: ANN001
+def fetch_edition(page, day: date, lang: str | None = None):  # noqa: ANN001
     try:
+        url = f"/api/v1/editions/{day.isoformat()}"
+        if lang:
+            url += f"?lang={lang}"
         return page.evaluate(
-            """(d) => fetch('/api/v1/editions/' + d).then(r => r.ok ? r.json() : null)""",
-            day.isoformat(),
+            """(u) => fetch(u, {cache: 'no-store'}).then(r => r.ok ? r.json() : null)""",
+            url,
         )
     except Exception:  # noqa: BLE001
         return None
@@ -125,6 +128,42 @@ def run(base: str) -> int:
             print("SKIP 首页：最近期号（未准备昨日数据，先运行 tools/seed_acceptance.py）")
         assert_common(page, "首页桌面")
         page.screenshot(path=str(out / "01-home-desktop.png"), full_page=True)
+
+        # ---- 语言切换（中/英纯语言检查）----
+        goto(page, f"{base}/?lang=en")
+        page.wait_for_timeout(900)
+        en_body = page.inner_text("body")
+        check(
+            "英文模式：界面切换",
+            "Top picks" in en_body or "Latest edition" in en_body or "Today's picks" in en_body,
+        )
+        check(
+            "英文模式：无中文界面文案",
+            "用户故事" not in en_body and "为什么值得看" not in en_body and "重点推荐" not in en_body,
+        )
+        page.screenshot(path=str(out / "01b-home-en.png"), full_page=True)
+
+        en_edition = fetch_edition(page, YESTERDAY, lang="en")
+        if en_edition and en_edition.get("items"):
+            goto(page, f"{base}/d/{YESTERDAY.isoformat()}?lang=en")
+            page.wait_for_timeout(700)
+            day_en = page.inner_text("body")
+            check("英文模式：日期页无中文", "用户故事" not in day_en and "往期回顾" not in day_en)
+            check("英文模式：用户故事区块", "User story:" in day_en)
+            stories = [item.get("user_story", "") for item in en_edition["items"]]
+            check(
+                "英文模式：英文推荐理由",
+                any(
+                    story.strip() and all(not ("\u4e00" <= ch <= "\u9fff") for ch in story)
+                    for story in stories
+                ),
+                stories,
+            )
+            page.click('a[hreflang="zh-CN"]')
+            page.wait_for_timeout(700)
+            back_zh = page.inner_text("body")
+            check("语言切换：返回中文", "用户故事：" in back_zh or "重点推荐" in back_zh)
+            check("语言切换：cookie 记忆", page.evaluate("document.cookie.includes('vr_lang=zh')"))
 
         today_edition = fetch_edition(page, TODAY)
         yesterday_edition = fetch_edition(page, YESTERDAY)

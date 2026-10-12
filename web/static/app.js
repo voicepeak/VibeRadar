@@ -1,6 +1,16 @@
 (() => {
   "use strict";
 
+  const I18N = window.VR_I18N || {};
+  const L = (key, fallback) => I18N[key] || fallback;
+  const fmt = (key, fallback, vars) => {
+    let text = L(key, fallback);
+    Object.keys(vars || {}).forEach((name) => {
+      text = text.replace(`{${name}}`, vars[name]);
+    });
+    return text;
+  };
+
   const SAVED_KEY = "vr_saved";
   const uuid = () =>
     (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
@@ -58,14 +68,14 @@
       items = items.filter((i) => i.product_id !== productId);
       writeSaved(items);
       btn.classList.remove("saved");
-      btn.textContent = "收藏";
+      btn.textContent = L("card.save", "收藏");
       postEvent("unsave", { edition_item_id: entry.edition_item_id });
     } else {
       items = items.filter((i) => i.product_id !== productId);
       items.push(entry);
       writeSaved(items);
       btn.classList.add("saved");
-      btn.textContent = "已收藏";
+      btn.textContent = L("card.saved", "已收藏");
       postEvent("save", { edition_item_id: entry.edition_item_id });
     }
   };
@@ -79,16 +89,16 @@
   };
 
   const RATING_LABEL = {
-    interest: "已记录：有趣",
-    boring: "已记录：无聊",
-    try_failed: "已记录：没玩起来",
+    interest: L("feedback.state.interest", "已记录：有趣"),
+    boring: L("feedback.state.boring", "已记录：无聊"),
+    try_failed: L("feedback.state.try_failed", "已记录：没玩起来"),
   };
 
   const describeState = (state) => {
     const parts = [];
-    if (state.tried) parts.push("已记录：玩过了");
+    if (state.tried) parts.push(L("feedback.state.tried", "已记录：玩过了"));
     if (state.rating_state && RATING_LABEL[state.rating_state]) parts.push(RATING_LABEL[state.rating_state]);
-    if (state.failure_reason) parts.push("原因已记录");
+    if (state.failure_reason) parts.push(L("feedback.state.reason", "原因已记录"));
     return parts.join(" · ");
   };
 
@@ -99,7 +109,7 @@
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
-      let message = "保存失败，请重试";
+      let message = L("feedback.save_failed", "保存失败，请重试");
       try {
         const data = await res.json();
         if (data && data.message) message = data.message;
@@ -135,7 +145,7 @@
       } else {
         return;
       }
-      setStatus(itemId, describeState(state) || "已保存", "ok");
+      setStatus(itemId, describeState(state) || L("feedback.state.saved", "已保存"), "ok");
       document
         .querySelectorAll(`[data-item-id="${itemId}"][data-action]`)
         .forEach((el) => el.classList.remove("active"));
@@ -150,7 +160,11 @@
         if (active) active.classList.add("active");
       }
     } catch (err) {
-      setStatus(itemId, `${err.message}（你的选择未丢失，可再次点击提交）`, "error");
+      setStatus(
+        itemId,
+        `${err.message}${L("feedback.selection_kept", "（你的选择未丢失，可再次点击提交）")}`,
+        "error"
+      );
     }
   };
 
@@ -257,20 +271,22 @@
         desc.textContent = item.one_liner || "";
         const meta = document.createElement("p");
         meta.className = "muted small";
-        meta.textContent = item.edition_date ? `收藏自 ${item.edition_date} 期` : "收藏条目";
+        meta.textContent = item.edition_date
+          ? fmt("saved.from_edition", "收藏自 {date} 期", { date: item.edition_date })
+          : L("saved.item", "收藏条目");
         const actions = document.createElement("div");
         actions.className = "saved-actions";
         if (item.edition_item_id) {
           const feedback = document.createElement("a");
           feedback.className = "btn";
           feedback.href = `/feedback/${item.edition_item_id}`;
-          feedback.textContent = "反馈";
+          feedback.textContent = L("saved.feedback", "反馈");
           actions.appendChild(feedback);
         }
         const remove = document.createElement("button");
         remove.type = "button";
         remove.className = "btn";
-        remove.textContent = "取消收藏";
+        remove.textContent = L("saved.remove", "取消收藏");
         remove.addEventListener("click", () => {
           writeSaved(readSaved().filter((i) => i.product_id !== item.product_id));
           card.remove();
@@ -299,15 +315,15 @@
             note: data.get("note") || "",
           }),
         });
-        if (!res.ok) throw new Error("提交失败");
+        if (!res.ok) throw new Error(L("feedback.issue_failed", "提交失败，请稍后重试。"));
         if (status) {
-          status.textContent = "已收到报错，内容问题当日进入复核。";
+          status.textContent = L("feedback.issue_ok", "已收到报错，内容问题当日进入复核。");
           status.className = "feedback-status ok";
         }
         form.reset();
       } catch (e) {
         if (status) {
-          status.textContent = "提交失败，请稍后重试。";
+          status.textContent = L("feedback.issue_failed", "提交失败，请稍后重试。");
           status.className = "feedback-status error";
         }
       }
@@ -328,7 +344,7 @@
     document.querySelectorAll("button[data-action='save']").forEach((btn) => {
       if (isSaved(btn.dataset.productId)) {
         btn.classList.add("saved");
-        btn.textContent = "已收藏";
+        btn.textContent = L("card.saved", "已收藏");
       }
     });
     restoreFeedbackStates();

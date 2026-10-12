@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import select
@@ -12,7 +13,13 @@ from viberadar.deliver import build_rss
 from viberadar.settings import Settings
 from viberadar.store.models import EditionRow
 
-from .edition import build_edition_view
+from .edition import (
+    build_edition_view,
+    group_sections,
+    highlights,
+    latest_published,
+    recent_editions,
+)
 
 
 def _env():
@@ -25,18 +32,14 @@ def export_edition(session: Session, edition: EditionRow, settings: Settings) ->
     out_dir = settings.public_dir / "d"
     out_dir.mkdir(parents=True, exist_ok=True)
     view = build_edition_view(session, edition)
-    tools = [item for item in view.items if item.section != "creative"]
-    creative = [item for item in view.items if item.section == "creative"]
-    sections = []
-    if tools:
-        sections.append(("工具与工作流", tools))
-    if creative:
-        sections.append(("创意与实验", creative))
     html = _env().get_template("edition.html").render(
         settings=settings,
         edition=view,
-        sections=sections,
+        highlights=highlights(view),
+        sections=group_sections(view),
+        recent=recent_editions(session, exclude_id=edition.id, limit=5, before_date=view.date),
         request=None,
+        locale="zh",
     )
     path = out_dir / f"{edition.date.isoformat()}.html"
     path.write_text(html, encoding="utf-8")
@@ -44,27 +47,33 @@ def export_edition(session: Session, edition: EditionRow, settings: Settings) ->
 
 
 def export_index(session: Session, settings: Settings) -> Path:
-    edition = session.scalar(
-        select(EditionRow)
-        .where(EditionRow.status == EditionStatus.PUBLISHED.value)
-        .order_by(EditionRow.date.desc())
-        .limit(1)
-    )
+    edition = latest_published(session)
     out_dir = settings.public_dir
     out_dir.mkdir(parents=True, exist_ok=True)
+    today = date.today()
     if edition is None:
         html = _env().get_template("index.html").render(
-            settings=settings, edition=None, intro_only=True, today=None, request=None
+            settings=settings,
+            edition=None,
+            today=today,
+            intro_only=True,
+            recent=[],
+            request=None,
+            locale="zh",
         )
     else:
         view = build_edition_view(session, edition)
         html = _env().get_template("index.html").render(
             settings=settings,
             edition=view,
+            today=today,
+            is_today=edition.date == today,
             intro_only=False,
-            today=edition.date,
-            is_today=True,
+            highlights=highlights(view),
+            sections=group_sections(view),
+            recent=recent_editions(session, exclude_id=edition.id, limit=7),
             request=None,
+            locale="zh",
         )
     path = out_dir / "index.html"
     path.write_text(html, encoding="utf-8")

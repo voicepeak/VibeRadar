@@ -1,7 +1,7 @@
 {% macro item_card(item, settings, compact=False) %}
 <article class="card item-card{% if item.highlight %} highlight{% endif %}" id="item-{{ item.id }}"
          data-item-id="{{ item.id }}" data-edition-id="{{ item.edition_id }}" data-product-slug="{{ item.slug }}">
-  {% if item.highlight %}<p class="highlight-badge">重点推荐</p>{% endif %}
+  {% if item.highlight %}<p class="highlight-badge">{{ t('card.highlight') }}</p>{% endif %}
   <p class="item-meta">
     <span class="pill">{{ item.category_label }}</span>
     <span class="pill mode-pill mode-{{ item.mode }}">{{ item.mode | mode_label }}</span>
@@ -11,8 +11,11 @@
     {% if item.slug %}<a href="/p/{{ item.slug }}">{{ item.name }}</a>{% else %}{{ item.name }}{% endif %}
   </h3>
   <p class="one-liner">{{ item.one_liner }}</p>
+  {% if item.user_story %}
+    <p class="user-story"><span class="story-label">{{ t('card.user_story') }}</span>{{ item.user_story }}</p>
+  {% endif %}
   {% if not compact %}
-    <p class="why">为什么值得看：{{ item.why_interesting }}</p>
+    <p class="why">{{ t('card.why') }}{{ item.why_interesting }}</p>
     {% if item.steps %}
       <ol class="steps">
         {% for step in item.steps %}<li>{{ step }}</li>{% endfor %}
@@ -25,23 +28,18 @@
       <a href="{{ source.url }}" rel="noopener noreferrer">{{ source.label }}</a>
     {% endfor %}
     {% if item.links and item.links.project %}
-      <a class="primary-link" href="/go/{{ item.links.project }}" rel="noopener noreferrer">查看项目 / 试玩</a>
+      <a class="primary-link" href="/go/{{ item.links.project }}" rel="noopener noreferrer">{{ t('card.try') }}</a>
     {% endif %}
-    <span class="muted">核查：{{ item.checked_at | fmt_date }}</span>
-    <span class="muted">
-      {% if item.evidence_status == 'human_tested' %}已实测
-      {% elif item.evidence_status == 'doc_checked' %}文档已核查
-      {% elif item.evidence_status == 'failed' %}入口未核查通过
-      {% else %}证据待补充{% endif %}
-    </span>
+    <span class="muted">{{ t('card.checked', date=item.checked_at | fmt_date) }}</span>
+    <span class="muted">{{ item.evidence_status | evidence_label }}</span>
   </p>
-  <div class="actions" role="group" aria-label="反馈操作">
-    <button type="button" class="btn" data-action="tried" data-item-id="{{ item.id }}">玩过了</button>
+  <div class="actions" role="group" aria-label="{{ t('card.feedback') }}">
+    <button type="button" class="btn" data-action="tried" data-item-id="{{ item.id }}">{{ t('card.tried') }}</button>
     <button type="button" class="btn btn-save" data-action="save" data-item-id="{{ item.id }}"
             data-product-id="{{ item.product_id }}" data-slug="{{ item.slug }}"
             data-name="{{ item.name }}" data-one-liner="{{ item.one_liner }}"
-            data-edition-date="{{ item.edition_date }}">收藏</button>
-    <a class="btn btn-link" href="/feedback/{{ item.id }}">评价与报错</a>
+            data-edition-date="{{ item.edition_date }}">{{ t('card.save') }}</button>
+    <a class="btn btn-link" href="/feedback/{{ item.id }}">{{ t('card.feedback') }}</a>
   </div>
   <p class="feedback-status muted" data-status-for="{{ item.id }}" aria-live="polite"></p>
 </article>

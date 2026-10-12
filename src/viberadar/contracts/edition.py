@@ -95,6 +95,7 @@ class EditionItemView(StrictModel):
     category: str
     category_label: str
     one_liner: str
+    user_story: str = ""
     why_interesting: str
     mode: str
     access_text: str

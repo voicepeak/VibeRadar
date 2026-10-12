@@ -6,7 +6,11 @@ from .edition import (
     build_selection,
     create_correction,
     freeze_edition,
+    group_sections,
+    highlights,
+    latest_published,
     publish_edition,
+    recent_editions,
 )
 
 __all__ = [
@@ -15,5 +19,9 @@ __all__ = [
     "build_selection",
     "create_correction",
     "freeze_edition",
+    "group_sections",
+    "highlights",
+    "latest_published",
     "publish_edition",
+    "recent_editions",
 ]

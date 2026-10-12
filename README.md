@@ -24,12 +24,12 @@
 | M1 采集 | HN Algolia（Show HN 全量窗口分页）、GitHub 分层 query、人工注入 JSONL、Product Hunt（凭据+条款核查后启用）；按源水位、失败隔离、429/5xx 退避 |
 | M2 实体解析 | URL 归一化与跟踪参数清理；GitHub repo 身份与子路径映射；共享平台/同名负例保护；合并记录可撤销、旧 slug 301 |
 | M3 分类 | 规则先排明显纯新闻；LLM 批量结构化分类（0–1 置信度、spam 分数）；阈值分层 0.8/0.5/人工复核 |
-| M4 富化 | 公开页面/README 抓取（URL 安全边界）、证据摘录（≤200 字）、门槛字段推断、确定性与模型指南；claim 引用完整性程序检查 |
+| M4 富化 | 公开页面/README 抓取（URL 安全边界）、证据摘录（≤200 字）、门槛字段推断、确定性与模型指南；中英双语卡片与具体用户故事（缺失语言用模板兜底，不混排）；claim 引用完整性程序检查 |
 | M5 排序 | 按源中位并列秩分位数、速度、`exp(-h/18)` 新鲜度、五维 rubric、taste_match、spam 惩罚、奖励合计 ≤0.08；确定性公式 |
 | M5.5 复核 | CLI 候选列表（≤20，同分类 ≤8）、通过/淘汰（带原因）/编辑/锁定/撤销、时长统计、保存不丢 |
 | M6 编制分发 | 冻结快照（短刊/空刊/降级）、受控 `/go/{link_id}` 跳转、飞书 webhook 与发送账本、网页/飞书渠道解耦、unknown 不盲目重发 |
 | M7 反馈 | 第一方匿名 ID、事件去重、试玩与评价分离的当前态（改选/撤回）、原因可选、内容报错队列与更正关联、限流 |
-| M8 存档 | `/`、`/d/{date}`、`/p/{slug}`、`/saved`、`/feedback/{id}`、`/rss.xml`、sitemap、静态导出；重点推荐→分组→最近期号三级结构；360px 移动可读、无 JS 可读正文 |
+| M8 存档 | `/`、`/d/{date}`、`/p/{slug}`、`/saved`、`/feedback/{id}`、`/rss.xml`、sitemap、静态导出；中/英双语切换（`?lang=` + cookie 记忆，任何语言模式不混排）；重点推荐→分组→最近期号三级结构；360px 移动可读、无 JS 可读正文 |
 | M9 运维 | CLI（ingest/pipeline/review/freeze/publish/deliver/replay/eval/backup/restore/status…）、调度器（07:30/08:35/09:00/09:05）、互斥锁、成本账本与预算上限、备份与隔离恢复 |
 
 ## 架构拓扑
@@ -87,7 +87,7 @@
 py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 
-# 2) 运行测试（108 项：契约/单元/集成/验收）
+# 2) 运行测试（117 项：契约/单元/集成/验收）
 .\.venv\Scripts\python.exe -m pytest tests -q
 
 # 3) 人工注入两条候选并跑一条端到端管线（离线 mock LLM）
@@ -112,7 +112,7 @@ py -3.13 -m venv .venv
 
 ```powershell
 python tools/seed_acceptance.py   # 可选：昨天常规刊 6 条 + 前天空刊
-python tools/qa_frontend.py       # 46 项断言 + 桌面/360px 截图（logs/qa/）
+python tools/qa_frontend.py       # 40+ 项断言（含中/英切换与用户故事）+ 桌面/360px 截图（logs/qa/）
 ```
 
 服务已在运行即可执行；覆盖首页分级、短刊/空刊、产品页、反馈与收藏交互、404、移动端可用性。

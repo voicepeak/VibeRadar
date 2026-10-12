@@ -37,6 +37,7 @@ from .edition import (
 from .entities import Evidence, LaunchEvent, MergeAction, Product
 from .enrichment import (
     AccessInfo,
+    CardCopyEn,
     Claim,
     Enrichment,
     InterestAssessment,
@@ -58,6 +59,7 @@ __all__ = [
     "SCHEMA_VERSION",
     "AccessInfo",
     "BonusItem",
+    "CardCopyEn",
     "Channel",
     "Claim",
     "Classification",

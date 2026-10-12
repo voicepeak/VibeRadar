@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}未找到 · Vibe Radar{% endblock %}
+{% block title %}{{ t('not_found.title') }} · Vibe Radar{% endblock %}
 {% block content %}
   <section class="hero">
-    <h1>未找到</h1>
-    <p>{{ message or '你访问的内容不存在。' }}</p>
-    <p><a href="/">返回最近一期</a></p>
+    <h1>{{ t('not_found.title') }}</h1>
+    <p>{{ message or t(message_key or 'not_found.default') }}</p>
+    <p><a href="/">{{ t('not_found.back') }}</a></p>
   </section>
 {% endblock %}

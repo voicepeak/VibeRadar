@@ -1,18 +1,18 @@
-{% macro recent_list(recent, title="最近期号") %}
+{% macro recent_list(recent, title_key="recent.latest") %}
 {% if recent %}
 <section class="recent-block">
-  <h2 class="section-title">{{ title }}</h2>
+  <h2 class="section-title">{{ t(title_key) }}</h2>
   <ul class="recent-list">
     {% for entry in recent %}
     <li>
       <a class="recent-date" href="/d/{{ entry.date.isoformat() }}">{{ entry.date.isoformat() }}</a>
       <span class="pill recent-status">
-        {% if entry.content_status == 'short' %}短刊 {{ entry.count }} 条
-        {% elif entry.content_status == 'empty' %}暂无推荐
-        {% elif entry.content_status == 'degraded' %}部分信源缺失
-        {% else %}精选 {{ entry.count }} 条{% endif %}
+        {% if entry.content_status == 'short' %}{{ t('recent.short', count=entry.count) }}
+        {% elif entry.content_status == 'empty' %}{{ t('recent.empty') }}
+        {% elif entry.content_status == 'degraded' %}{{ t('recent.degraded') }}
+        {% else %}{{ t('recent.count', count=entry.count) }}{% endif %}
       </span>
-      {% if entry.intro and entry.content_status != 'empty' %}
+      {% if entry.intro and entry.content_status != 'empty' and locale == 'zh' %}
         <span class="muted small recent-intro">{{ entry.intro }}</span>
       {% endif %}
     </li>

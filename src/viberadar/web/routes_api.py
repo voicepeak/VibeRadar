@@ -30,7 +30,14 @@ from viberadar.feedback import (
 from viberadar.store import repo_editions, repo_products
 from viberadar.store.models import EditionItemRow, EditionRow
 
-from .deps import client_ip, ensure_cookie, get_session, resolve_actor, same_origin
+from .deps import (
+    client_ip,
+    ensure_cookie,
+    get_session,
+    resolve_actor,
+    resolve_locale,
+    same_origin,
+)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -74,7 +81,7 @@ def get_edition(
     edition = repo_editions.get_edition_by_date(session, target, settings.pipeline.timezone)
     if edition is None or edition.status != EditionStatus.PUBLISHED.value:
         return _error(request, "not_found", "期号不存在或未公开", 404)
-    view = build_edition_view(session, edition)
+    view = build_edition_view(session, edition, resolve_locale(request))
     payload = view.model_dump(mode="json")
     body = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     etag = '"' + hashlib.sha256(body.encode("utf-8")).hexdigest()[:32] + '"'
@@ -83,6 +90,8 @@ def get_edition(
     result = JSONResponse(json.loads(body))
     result.headers["ETag"] = etag
     result.headers["Cache-Control"] = "public, max-age=300"
+    # 内容随 ?lang= 或语言 cookie 变化；共享缓存需按 Cookie/语言键隔离。
+    result.headers["Vary"] = "Cookie, Accept-Language"
     return result
 
 

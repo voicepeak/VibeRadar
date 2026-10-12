@@ -81,7 +81,7 @@ def create_app(db_path: str | Path | None = None, settings: Settings | None = No
             return render(
                 request,
                 "not_found.html",
-                {"settings": settings, "message": "你访问的页面不存在。", "status": 404},
+                {"settings": settings, "message_key": "not_found.page", "status": 404},
                 status_code=404,
             )
         return JSONResponse(

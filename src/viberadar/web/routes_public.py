@@ -12,9 +12,15 @@ from fastapi.responses import (
     RedirectResponse,
     Response,
 )
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from viberadar.compose import (
+    group_sections,
+    highlights,
+    latest_published,
+    recent_editions,
+)
 from viberadar.contracts import (
     EditionStatus,
     EventPayload,
@@ -26,7 +32,9 @@ from viberadar.feedback import ingest_event
 from viberadar.store import repo_editions, repo_products
 from viberadar.store.models import EditionItemRow, EditionRow
 
-from .deps import ensure_cookie, get_session, resolve_actor
+from viberadar.i18n import is_copy_pure, localize_card_content
+
+from .deps import ensure_cookie, get_session, resolve_actor, resolve_locale
 from .templating import render
 
 router = APIRouter()
@@ -36,60 +44,6 @@ BOT_UA_PATTERN = re.compile(
     r"discordbot|feishu|dingtalk|wechat|wxwork|curl|wget|python-requests)",
     re.I,
 )
-
-
-def _latest_published(session: Session) -> EditionRow | None:
-    return session.scalar(
-        select(EditionRow)
-        .where(EditionRow.status == EditionStatus.PUBLISHED.value)
-        .order_by(EditionRow.date.desc())
-        .limit(1)
-    )
-
-
-def _recent_editions(
-    session: Session,
-    exclude_id: str | None = None,
-    limit: int = 7,
-    before_date: date | None = None,
-) -> list[dict]:
-    """最近期号入口（PRD 4.6）：日期、条数、内容状态与简介。
-
-    before_date 用于日期页"往期回顾"，只展示更早的期号。
-    """
-    stmt = (
-        select(EditionRow)
-        .where(EditionRow.status == EditionStatus.PUBLISHED.value)
-        .order_by(EditionRow.date.desc())
-        .limit(limit + 1)
-    )
-    if before_date is not None:
-        stmt = stmt.where(EditionRow.date < before_date)
-    rows = list(session.scalars(stmt))
-    result: list[dict] = []
-    for edition in rows:
-        if exclude_id and edition.id == exclude_id:
-            continue
-        revision = repo_editions.latest_revision(session, edition.id) or edition.revision
-        count = session.scalar(
-            select(func.count())
-            .select_from(EditionItemRow)
-            .where(
-                EditionItemRow.edition_id == edition.id,
-                EditionItemRow.revision == revision,
-            )
-        )
-        result.append(
-            {
-                "date": edition.date,
-                "count": int(count or 0),
-                "content_status": edition.content_status,
-                "intro": edition.intro or "",
-            }
-        )
-        if len(result) >= limit:
-            break
-    return result
 
 
 def _get_date_param(value: str) -> date | None:
@@ -102,8 +56,9 @@ def _get_date_param(value: str) -> date | None:
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, session: Session = Depends(get_session)):
     settings = request.app.state.settings
+    locale = resolve_locale(request)
     today = date.today()
-    edition = _latest_published(session)
+    edition = latest_published(session)
     if edition is None:
         response = render(
             request,
@@ -117,7 +72,7 @@ def home(request: Request, session: Session = Depends(get_session)):
             },
         )
     else:
-        view = _build_view(session, edition)
+        view = _build_view(session, edition, locale)
         response = render(
             request,
             "index.html",
@@ -127,9 +82,9 @@ def home(request: Request, session: Session = Depends(get_session)):
                 "today": today,
                 "is_today": edition.date == today,
                 "intro_only": False,
-                "highlights": _highlights(view),
-                "sections": _group_sections(view),
-                "recent": _recent_editions(session, exclude_id=edition.id, limit=7),
+                "highlights": highlights(view),
+                "sections": group_sections(view),
+                "recent": recent_editions(session, exclude_id=edition.id, limit=7),
             },
         )
     actor = resolve_actor(request, settings, create=True)
@@ -140,27 +95,33 @@ def home(request: Request, session: Session = Depends(get_session)):
 @router.get("/d/{date_str}", response_class=HTMLResponse)
 def edition_page(date_str: str, request: Request, session: Session = Depends(get_session)):
     settings = request.app.state.settings
+    locale = resolve_locale(request)
     target = _get_date_param(date_str)
     if target is None:
-        return render(request, "not_found.html", {"settings": settings, "message": "日期不存在"}, status_code=404)
+        return render(
+            request,
+            "not_found.html",
+            {"settings": settings, "message_key": "not_found.date"},
+            status_code=404,
+        )
     edition = repo_editions.get_edition_by_date(session, target, settings.pipeline.timezone)
     if edition is None or edition.status != EditionStatus.PUBLISHED.value:
         return render(
             request,
             "not_found.html",
-            {"settings": settings, "message": "该日期没有已公开的期号"},
+            {"settings": settings, "message_key": "not_found.edition"},
             status_code=404,
         )
-    view = _build_view(session, edition)
+    view = _build_view(session, edition, locale)
     response = render(
         request,
         "edition.html",
         {
             "settings": settings,
             "edition": view,
-            "highlights": _highlights(view),
-            "sections": _group_sections(view),
-            "recent": _recent_editions(session, exclude_id=edition.id, limit=5, before_date=target),
+            "highlights": highlights(view),
+            "sections": group_sections(view),
+            "recent": recent_editions(session, exclude_id=edition.id, limit=5, before_date=target),
         },
     )
     actor = resolve_actor(request, settings, create=True)
@@ -171,6 +132,7 @@ def edition_page(date_str: str, request: Request, session: Session = Depends(get
 @router.get("/p/{slug}")
 def product_page(slug: str, request: Request, session: Session = Depends(get_session)):
     settings = request.app.state.settings
+    locale = resolve_locale(request)
     redirect = repo_products.get_slug_redirect(session, slug)
     if redirect is not None:
         product = repo_products.get_product(session, redirect.product_id)
@@ -179,7 +141,10 @@ def product_page(slug: str, request: Request, session: Session = Depends(get_ses
     product = repo_products.get_product_by_slug(session, slug)
     if product is None:
         return render(
-            request, "not_found.html", {"settings": settings, "message": "产品不存在"}, status_code=404
+            request,
+            "not_found.html",
+            {"settings": settings, "message_key": "not_found.product"},
+            status_code=404,
         )
     history_rows = session.execute(
         select(EditionItemRow, EditionRow)
@@ -193,26 +158,39 @@ def product_page(slug: str, request: Request, session: Session = Depends(get_ses
     history = []
     for item_row, edition_row in history_rows:
         content = dict(item_row.content_json or {})
+        one_liner = content.get("one_liner", "")
+        if locale == "en":
+            en_block = (content.get("i18n") or {}).get("en") or {}
+            one_liner = en_block.get("one_liner", "")
         history.append(
             {
                 "date": edition_row.date,
                 "edition_id": edition_row.id,
                 "item_id": item_row.id,
-                "one_liner": content.get("one_liner", ""),
+                "one_liner": one_liner,
                 "position": item_row.position,
                 "revision": item_row.revision,
             }
         )
+
+    source = dict(history_rows[0][0].content_json or {}) if history_rows else {}
+    source.setdefault("name", product.name)
+    labels = settings.taxonomy.labels(locale)
+    category_key = product.category or source.get("category") or ""
+    category_label = labels.get(category_key) or source.get("category_label") or ""
+    summary = product.summary or ""
+    if history_rows and not is_copy_pure(summary, locale):
+        summary = localize_card_content(source, locale, category_label)["one_liner"]
+
     return render(
         request,
         "product.html",
         {
             "settings": settings,
             "product": product,
+            "summary": summary,
             "history": history,
-            "category_label": settings.taxonomy.labels().get(
-                product.category or "", product.category or ""
-            ),
+            "category_label": category_label,
         },
     )
 
@@ -232,13 +210,23 @@ def feedback_page(
 ):
     """GET 仅显示操作；POST（由页面确认后）才写反馈。"""
     settings = request.app.state.settings
+    locale = resolve_locale(request)
     item = repo_editions.get_item(session, edition_item_id)
     if item is None:
         return render(
-            request, "not_found.html", {"settings": settings, "message": "条目不存在"}, status_code=404
+            request,
+            "not_found.html",
+            {"settings": settings, "message_key": "not_found.item"},
+            status_code=404,
         )
     edition = repo_editions.get_edition(session, item.edition_id)
     content = dict(item.content_json or {})
+    category = content.get("category", "")
+    copy = localize_card_content(
+        content,
+        locale,
+        settings.taxonomy.labels(locale).get(category, content.get("category_label", "")),
+    )
     response = render(
         request,
         "feedback.html",
@@ -246,10 +234,10 @@ def feedback_page(
             "settings": settings,
             "item": {
                 "id": item.id,
-                "name": content.get("name", ""),
-                "one_liner": content.get("one_liner", ""),
-                "category_label": content.get("category_label", ""),
-                "access_text": content.get("access_text", ""),
+                "name": copy["name"],
+                "one_liner": copy["one_liner"],
+                "category_label": copy["category_label"],
+                "access_text": copy["access_text"],
             },
             "edition": {"date": edition.date if edition else None},
         },
@@ -265,7 +253,10 @@ def go_redirect(link_id: str, request: Request, session: Session = Depends(get_s
     link = repo_editions.get_outbound_link(session, link_id)
     if link is None:
         return render(
-            request, "not_found.html", {"settings": request.app.state.settings, "message": "链接不存在"}, status_code=404
+            request,
+            "not_found.html",
+            {"settings": request.app.state.settings, "message_key": "not_found.link"},
+            status_code=404,
         )
     settings = request.app.state.settings
     user_agent = request.headers.get("user-agent", "")
@@ -362,25 +353,7 @@ def health_ready(request: Request, session: Session = Depends(get_session)):
         )
 
 
-def _build_view(session: Session, edition: EditionRow):
+def _build_view(session: Session, edition: EditionRow, locale: str = "zh"):
     from viberadar.compose import build_edition_view
 
-    return build_edition_view(session, edition)
-
-
-def _highlights(view) -> list:
-    """重点推荐 1–2 条优先展示（PRD 4.6）。"""
-    return [item for item in view.items if item.highlight]
-
-
-def _group_sections(view):
-    """其余条目按“工具与工作流 / 创意与实验”分组；空分组隐藏，重点条目不重复出现。"""
-    rest = [item for item in view.items if not item.highlight]
-    tools = [item for item in rest if item.section != "creative"]
-    creative = [item for item in rest if item.section == "creative"]
-    sections = []
-    if tools:
-        sections.append(("工具与工作流", tools))
-    if creative:
-        sections.append(("创意与实验", creative))
-    return sections
+    return build_edition_view(session, edition, locale)

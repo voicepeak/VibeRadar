@@ -35,14 +35,35 @@ def seeded(db_path, temp_settings):
                 "category_label": "编码 Agent",
                 "one_liner": f"WebTool{i} 的一句话",
                 "why_interesting": "值得看的理由",
+                "user_story": f"你是开发者：用 WebTool{i} 处理一次日常任务，看看是否顺手。",
                 "mode": "demo",
                 "steps": ["打开入口", "查看演示"],
                 "access_text": "免费 · 需登录",
+                "access_json": {
+                    "pricing": "free",
+                    "mobile_support": "unknown",
+                    "login_required": True,
+                    "api_key_required": None,
+                    "waitlist": None,
+                    "self_host_required": None,
+                    "platforms": [],
+                    "setup_minutes": None,
+                    "checked_at": NOW.isoformat(),
+                },
                 "time_promise": None,
                 "mobile_note": "手机体验未确认",
+                "mobile_note_key": "mobile.unknown",
                 "evidence_status": "doc_checked",
                 "checked_at": NOW.isoformat(),
                 "source_links": [{"label": "来源", "url": f"https://example.com/src{i}"}],
+                "i18n": {
+                    "en": {
+                        "one_liner": f"WebTool{i} in one line.",
+                        "why_interesting": "A reason worth reading.",
+                        "user_story": f"You are a developer: run WebTool{i} on one daily task and see if it fits.",
+                        "steps": ["Open the entry", "Watch the demo"],
+                    }
+                },
             }
             repo_pipeline.upsert_candidate(
                 session,
@@ -144,6 +165,45 @@ def test_pages_render(client, seeded, db_path):
     feedback = client.get(f"/feedback/{item_id}")
     assert feedback.status_code == 200
     assert "玩过了" in feedback.text
+
+
+def test_card_user_story_rendered(client, seeded):
+    home = client.get("/")
+    assert "用户故事：" in home.text
+    assert "用 WebTool0 处理一次日常任务" in home.text
+
+    en = client.get("/?lang=en")
+    assert "User story:" in en.text
+    assert "run WebTool0 on one daily task" in en.text
+    assert "用户故事" not in en.text
+
+
+def test_language_switch_cookie_and_purity(client, seeded):
+    default = client.get("/")
+    assert 'lang="zh-CN"' in default.text
+    assert "今日精选" in default.text or "最近一期" in default.text
+    assert "Why it matters" not in default.text
+
+    switched = client.get("/?lang=en")
+    assert 'lang="en"' in switched.text
+    assert "Latest edition" in switched.text or "Today's picks" in switched.text
+    assert "用户故事" not in switched.text
+    assert "为什么值得看" not in switched.text
+    assert switched.cookies.get("vr_lang") == "en"
+
+    persisted = client.get("/")
+    assert 'lang="en"' in persisted.text
+
+    back = client.get("/?lang=zh")
+    assert 'lang="zh-CN"' in back.text
+    assert "用户故事：" in back.text
+
+
+def test_edition_api_language(client, seeded):
+    zh = client.get("/api/v1/editions/2026-10-12").json()
+    assert zh["items"][0]["user_story"].startswith("你是开发者")
+    en = client.get("/api/v1/editions/2026-10-12?lang=en").json()
+    assert en["items"][0]["user_story"].startswith("You are a developer")
 
 
 def test_edition_api_etag_and_404(client, seeded):

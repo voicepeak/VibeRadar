@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}反馈 · {{ item.name }}{% endblock %}
+{% block title %}{{ t('card.feedback') }} · {{ item.name }}{% endblock %}
 {% block content %}
   <section class="edition-head">
     <p class="item-meta">
@@ -12,47 +12,47 @@
   </section>
 
   <section class="card" data-item-id="{{ item.id }}">
-    <h2 class="section-title">告诉主理人你的体验</h2>
-    <p class="muted">无需注册。飞书里的链接打开本页后由你确认操作，链接预览机器人不会产生反馈。</p>
-    <div class="actions" role="group" aria-label="反馈操作">
-      <button type="button" class="btn" data-action="tried" data-item-id="{{ item.id }}">玩过了</button>
-      <button type="button" class="btn" data-action="interest" data-item-id="{{ item.id }}">有趣</button>
-      <button type="button" class="btn" data-action="boring" data-item-id="{{ item.id }}">无聊</button>
-      <button type="button" class="btn" data-action="try-failed" data-item-id="{{ item.id }}">没玩起来</button>
-      <button type="button" class="btn" id="clear-rating" data-item-id="{{ item.id }}">撤回评价</button>
+    <h2 class="section-title">{{ t('feedback.title') }}</h2>
+    <p class="muted">{{ t('feedback.desc') }}</p>
+    <div class="actions" role="group" aria-label="{{ t('feedback.title') }}">
+      <button type="button" class="btn" data-action="tried" data-item-id="{{ item.id }}">{{ t('feedback.tried') }}</button>
+      <button type="button" class="btn" data-action="interest" data-item-id="{{ item.id }}">{{ t('feedback.interest') }}</button>
+      <button type="button" class="btn" data-action="boring" data-item-id="{{ item.id }}">{{ t('feedback.boring') }}</button>
+      <button type="button" class="btn" data-action="try-failed" data-item-id="{{ item.id }}">{{ t('feedback.try_failed') }}</button>
+      <button type="button" class="btn" id="clear-rating" data-item-id="{{ item.id }}">{{ t('feedback.clear') }}</button>
     </div>
     <div class="fail-reasons" data-reasons-for="{{ item.id }}" hidden>
-      <label>没玩起来的原因（可选）：
+      <label>{{ t('feedback.fail_label') }}
         <select data-reason-select="{{ item.id }}">
-          <option value="">不填写</option>
-          <option value="entry_dead">入口失效</option>
-          <option value="login_required">需登录</option>
-          <option value="paid">需要付费</option>
-          <option value="missing_api_key">缺 API key</option>
-          <option value="platform_unsupported">平台不支持</option>
-          <option value="steps_mismatch">步骤与说明不符</option>
-          <option value="other">其他</option>
+          <option value="">{{ t('feedback.fail_none') }}</option>
+          <option value="entry_dead">{{ t('feedback.reason.entry_dead') }}</option>
+          <option value="login_required">{{ t('feedback.reason.login_required') }}</option>
+          <option value="paid">{{ t('feedback.reason.paid') }}</option>
+          <option value="missing_api_key">{{ t('feedback.reason.missing_api_key') }}</option>
+          <option value="platform_unsupported">{{ t('feedback.reason.platform_unsupported') }}</option>
+          <option value="steps_mismatch">{{ t('feedback.reason.steps_mismatch') }}</option>
+          <option value="other">{{ t('feedback.reason.other') }}</option>
         </select>
       </label>
-      <button type="button" class="btn" data-action="submit-fail" data-item-id="{{ item.id }}">提交失败原因</button>
+      <button type="button" class="btn" data-action="submit-fail" data-item-id="{{ item.id }}">{{ t('feedback.fail_submit') }}</button>
     </div>
     <p class="feedback-status muted" data-status-for="{{ item.id }}" aria-live="polite"></p>
 
-    <h2 class="section-title">报告内容错误</h2>
+    <h2 class="section-title">{{ t('feedback.report_title') }}</h2>
     <form id="issue-form" data-item-id="{{ item.id }}">
-      <label>问题类型
+      <label>{{ t('feedback.issue_type') }}
         <select name="issue_type" required>
-          <option value="pricing_wrong">费用不符</option>
-          <option value="link_dead">入口失效</option>
-          <option value="platform_wrong">平台不符</option>
-          <option value="steps_wrong">步骤错误</option>
-          <option value="other">其他</option>
+          <option value="pricing_wrong">{{ t('feedback.issue.pricing_wrong') }}</option>
+          <option value="link_dead">{{ t('feedback.issue.link_dead') }}</option>
+          <option value="platform_wrong">{{ t('feedback.issue.platform_wrong') }}</option>
+          <option value="steps_wrong">{{ t('feedback.issue.steps_wrong') }}</option>
+          <option value="other">{{ t('feedback.issue.other') }}</option>
         </select>
       </label>
-      <label>一句话说明（可选）
-        <input type="text" name="note" maxlength="200" placeholder="例如：官网实测为收费">
+      <label>{{ t('feedback.note_label') }}
+        <input type="text" name="note" maxlength="200" placeholder="{{ t('feedback.note_placeholder') }}">
       </label>
-      <button type="submit" class="btn">提交报错</button>
+      <button type="submit" class="btn">{{ t('feedback.submit_issue') }}</button>
     </form>
     <p class="feedback-status muted" id="issue-status" aria-live="polite"></p>
   </section>
