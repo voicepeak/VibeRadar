@@ -1,4 +1,4 @@
-# 实现说明与验收对照（PRD v1.2）
+# 实现说明与验收对照（PRD v1.3）
 
 日期：2026-10-12。代码版本 0.1.0。本文记录 MVP 实现的模块映射、验收场景覆盖情况
 与 PRD 13.3 Definition of Done 的当前状态。产品口径以 [PRD](../../PRD.md) 为准。
@@ -29,7 +29,7 @@ python -m viberadar <命令>          # 或已安装后直接 viberadar
 python -m viberadar pipeline --llm none   # 离线规则模式
 python -m viberadar serve --port 8000
 python -m viberadar scheduler       # 或 scheduler --once（任务计划）
-python -m pytest tests -q           # 158 项测试
+python -m pytest tests -q           # 159 项测试
 ```
 
 默认 `VIBERADAR_LLM_PROVIDER=auto`：存在 `data/llm.json` 档案时启用真实模型，否则离线 mock
@@ -55,16 +55,24 @@ PRD 10.1 以 DeepSeek 为唯一模型来源；本次扩展在不改变管线契�
   默认开放、不依赖环境变量；Caddy 已把 `/admin/*`、`/api/admin/*` 从公网 404。
 
 
+## 选品宽进策略（2026-10-13）
+
+默认 `quality_gates.mode=soft`（`config/pipeline.yaml`）：仅「明确不相关 / spam≥0.5 / stale / 未决实体 / 30 天重复且无重要更新」硬拦截；
+置信度（<0.8）、兴趣（<0.6）、富化缺失、入口不可达等降级为候选 `quality_flags`，不阻塞入选。冻结层
+（`compose/edition.py build_selection`）仅拦截 `evidence_status=failed`，未核查（unverified）放行；strict 模式恢复 PRD 5.3 与 E06 全门槛。
+
+数值：候选池 60、发布目标 15、短刊阈值 3、发布上限 30、深度富化 60；复核池单分类 ≤30、公开单分类占比 ≤0.6。
+
 ## 附录 E 验收场景覆盖
 
 | ID | 状态 | 证据 |
 |---|---|---|
 | E01 正常一期 | ✅ 自动化 | `test_full_pipeline_to_published_edition` |
-| E02 短刊 | ✅ 自动化 | `test_freeze_short_and_empty`（3 条 → short，空分组隐藏） |
+| E02 短刊 | ✅ 自动化 | `test_freeze_short_and_empty`（2 条 → short，空分组隐藏；宽进 public_min=3） |
 | E03 空刊 | ✅ 自动化 | `test_freeze_short_and_empty`、`test_all_sources_failed_produces_empty_edition` |
 | E04 单源失败 | ✅ 自动化 | `test_source_failure_does_not_block_other_sources`（partial + 覆盖缺失） |
 | E05 全部源失败 | ✅ 自动化 | `test_all_sources_failed_produces_empty_edition` |
-| E06 模型不可用 | ✅ 实现 | Gateway 失败 → 规则/模板降级；无证据条目冻结时跳过（`build_selection` 硬门槛） |
+| E06 模型不可用 | ✅ 实现 | Gateway 失败 → 规则/模板降级；`evidence_status=failed` 冻结时跳过，未核查放行（soft）；strict 恢复 E06 全证据门槛 |
 | E07 免费断言 | ✅ 实现 | `infer_access` 未知默认 unknown；`AccessInfo.display_text`；模板不含无依据免费声明 |
 | E08 同名不同产品 | ✅ 自动化 | `test_same_name_different_identity_creates_pending_relation` |
 | E09 同产品合并 | ✅ 自动化 | `test_merge_and_undo_restores_links`、`test_store.py` |
@@ -90,7 +98,7 @@ PRD 10.1 以 DeepSeek 为唯一模型来源；本次扩展在不改变管线契�
 
 ```powershell
 python tools/seed_acceptance.py     # 可选：准备昨日常规刊 6 条 + 前天空刊
-python tools/qa_frontend.py         # Playwright：桌面 + 360px，46 项断言，截图在 logs/qa/
+python tools/qa_frontend.py         # Playwright：桌面 + 360px，44 项断言，截图在 logs/qa/
 ```
 
 覆盖（对应 PRD 4.6/M8/US-01/02/03/05）：
@@ -115,7 +123,7 @@ python tools/qa_frontend.py         # Playwright：桌面 + 360px，46 项断言
 - [x] 成本账本、日/月上限、配置版本（hash 冻结到 run）、审计日志存在。
 - [x] 备份与隔离恢复演练（本地自动化）；异机副本由 `deploy/backup.ps1` 负责，待部署落实。
 - [~] 主理人 ≤15 分钟复核：CLI 计时已实现；代表候选计时需实际执行。
-- [~] US-01–08 验收记录：US-01/02/03/05 的页面与交互已有 `tools/qa_frontend.py` 自动化证据（46 项通过）；
+- [~] US-01–08 验收记录：US-01/02/03/05 的页面与交互已有 `tools/qa_frontend.py` 自动化证据（44 项断言；"往期不含更新期号" 1 项被核查时间戳误报，待修脚本）；
   E26–E33 中需真人执行的项（两分钟选择、手机实测、复核计时、试读访谈）待试读补充。
 - [ ] 试读结果与继续投入决策：属运营动作。
 
