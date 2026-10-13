@@ -34,6 +34,9 @@ logs/
 Thumbs.db
 .DS_Store
 
+# 过期申报材料：移出版本控制，仅本地留存
+docs/proposals/项目申报书.docx
+
 # Local start/stop scripts
 start.cmd
 start.ps1
