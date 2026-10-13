@@ -12,11 +12,9 @@
 |---|---|
 | [完整 PRD v1.3](PRD.md) | 需求基线：模块规则、数据契约与 38 个验收场景 |
 | [实现说明与验收对照](docs/implementation/IMPLEMENTATION.md) | 模块映射、E01–E33 覆盖状态、DoD 清单与已知边界 |
-| [首发用户故事](docs/product/USER_STORIES.md) | 8 个实际场景、用户价值、验收条件与试读观察方式 |
-| [PRD 评审建议](docs/reviews/PRD_REVIEW.md) | 原稿问题、修订理由与待确认事项 |
+| [首发用户故事](docs/product/USER_STORIES.md) | 9 个实际场景（含 Phase 2 试玩运行时）、用户价值、验收条件与试读观察方式 |
 | [试玩运行时提案（Phase 2）](docs/proposals/TRY_RUNTIME.md) | 一键试玩方向、安全边界与 P2A–P2C 阶段 |
 | [评测集说明](evals/README.md) | 评测目录规范、门槛与留出集纪律 |
-| [原版 PRD v1.0](docs/archive/PRD-v1.0.md) / [v1.1 基线](docs/archive/PRD-v1.1.md) | 历史版本快照 |
 
 ## 已实现能力（对照 PRD 第 6 章）
 
