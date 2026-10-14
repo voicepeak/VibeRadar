@@ -1,56 +1,49 @@
 {% extends "base.html" %}
-{% from "_item_card.html" import item_card with context %}
 {% from "_recent.html" import recent_list with context %}
-{% block title %}Vibe Radar · {% if edition %}{{ edition.date.isoformat() }}{% else %}{{ t('nav.today') }}{% endif %}{% endblock %}
+{% block title %}Vibe Radar · {{ t('feed.title') }}{% endblock %}
 {% block content %}
-  {% if intro_only %}
-    <section class="hero">
-      <h1>{{ t('home.hero.title') }}</h1>
-      <p>{{ t('home.hero.desc') }}</p>
-      <p class="muted">{{ t('home.hero.first') }}</p>
-    </section>
-  {% else %}
-    {% set edition_intro = edition.intro if locale == 'zh' and edition.intro else t('intro.' + edition.content_status, count=edition.items | length) %}
-    <section class="edition-head">
-      <h1>
-        {% if is_today %}{{ t('home.today') }}{% else %}{{ t('home.latest') }}{% endif %} · {{ edition.date.isoformat() }}
-        <span class="count-badge">
-          {% if edition.content_status == 'empty' %}{{ t('home.empty_badge') }}
-          {% elif edition.content_status == 'short' %}{{ t('home.short', count=edition.items | length) }}
-          {% else %}{{ t('home.count', count=edition.items | length) }}{% endif %}
-        </span>
-      </h1>
-      <p class="intro">{{ edition_intro }}</p>
-      {% if not is_today %}
-        <p class="muted">{{ t('home.not_today', date=edition.date.isoformat()) }}</p>
-      {% endif %}
-      {% if edition.source_coverage and locale == 'zh' %}
-        <p class="muted">{{ edition.source_coverage }}</p>
-      {% endif %}
-      <p class="muted small">{{ t('home.permalink') }}<a href="/d/{{ edition.date.isoformat() }}">/d/{{ edition.date.isoformat() }}</a></p>
-    </section>
-
-    {% if highlights %}
-      <h2 class="section-title">{{ t('home.highlights') }}</h2>
-      {% for item in highlights %}
-        {{ item_card(item, settings) }}
-      {% endfor %}
-    {% endif %}
-
-    {% for title, items in sections %}
-      <h2 class="section-title">{{ title | section_label }}</h2>
-      {% for item in items %}
-        {{ item_card(item, settings, compact=True) }}
-      {% endfor %}
-    {% endfor %}
-
-    {% if not edition.items %}
-      <section class="card empty-card">
-        <p>{{ t('home.empty.p1') }}</p>
-        <p class="muted">{{ t('home.empty.p2') }}</p>
-      </section>
-    {% endif %}
-
-    {{ recent_list(recent, 'recent.latest') }}
-  {% endif %}
+{% if request and request.app is defined and request.app.state.local_acceptance_mode is defined and request.app.state.local_acceptance_mode %}
+<p class="notice">本地链路验收：发现输入固定为 MarkItDown，推荐由已配置模型生成，试玩在真实容器中运行。</p>
+{% endif %}
+<section class="feed-head">
+  <div>
+    <p class="eyebrow"><span class="live-dot"></span>{{ t('feed.eyebrow') }}</p>
+    <h1>{{ t('feed.title') }}</h1>
+    <p class="feed-description">{{ t('feed.description') }}</p>
+  </div>
+  <form method="post" action="/refresh" id="refresh-form">
+    <button class="btn btn-primary refresh-button" type="submit"><span aria-hidden="true">↻</span> {{ t('feed.refresh') }}</button>
+  </form>
+</section>
+<div class="feed-status-bar">
+  <p id="refresh-status" role="status" aria-live="polite">
+    {% if refresh_feedback %}{{ t('feed.cooldown') }}
+    {% elif feed.last_run %}
+      {% if feed.last_run.budget_exhausted %}{{ t('feed.budget') }}
+      {% elif feed.last_run.status == 'running' %}{{ t('feed.running') }}
+      {% elif feed.last_run.status == 'failed' %}{{ t('feed.failed') }}
+      {% elif feed.last_run.new_items %}{{ t('feed.added', count=feed.last_run.new_items) }}
+      {% else %}{{ t('feed.no_changes') }}{% endif %}
+    {% else %}{{ t('feed.first') }}{% endif %}
+  </p>
+  <p id="feed-updated" class="muted small">{% if feed.last_run %}{{ t('feed.updated') }} <time datetime="{{ feed.last_run.finished_at or feed.last_run.started_at }}">{{ (feed.last_run.finished_at or feed.last_run.started_at) | fmt_datetime }}</time>{% endif %}</p>
+  <p class="muted small">{{ t('feed.feishu') }}</p>
+</div>
+<nav class="feed-nav" aria-label="{{ t('feed.sections') }}">
+  <a href="#must_read">{{ t('feed.must_read') }}</a><a href="#trending">{{ t('feed.trending') }}</a>
+  <a href="#latest">{{ t('feed.latest') }}</a><a href="#all">{{ t('feed.all') }}</a>
+  <span>{{ t('feed.total', count=feed.total) }}</span>
+</nav>
+{% if not feed.total %}
+<div class="feed-welcome card">
+  <span class="welcome-radar" aria-hidden="true">◎</span>
+  <h2>{{ t('feed.empty_title') }}</h2>
+  <p>{{ t('feed.empty') }}</p>
+  {% if feed.pending %}<p class="muted">{{ t('feed.pending', count=feed.pending) }}</p>{% endif %}
+</div>
+{% endif %}
+<div id="feed-sections" data-run-id="{{ feed.last_run.id if feed.last_run and feed.last_run.status == 'running' else '' }}">
+  {% include "_feed_section.html" %}
+</div>
+<details class="archive-disclosure"><summary>{{ t('recent.latest') }}</summary>{{ recent_list(recent, 'recent.latest') }}</details>
 {% endblock %}

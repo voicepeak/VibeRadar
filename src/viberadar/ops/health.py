@@ -88,7 +88,14 @@ def status_report(
             DeliveryAttemptRow.status.in_(["retryable_failed", "unknown"])
         )
     ).all()
+    from viberadar.trial.recipes import recipe_stats
+    from viberadar.store.models import TryRecipeRow, FeedItemRow, RefreshRunRow
+    from viberadar.pipeline.feed import run_view
+    last_refresh = session.scalar(select(RefreshRunRow).order_by(RefreshRunRow.started_at.desc()).limit(1))
     return {
+        "feed": {"last_run": run_view(last_refresh) if last_refresh else None,
+                 "pending": len(list(session.scalars(select(FeedItemRow.id).where(FeedItemRow.state == "pending"))))},
+        "trials": [{"slug": r.slug, "version": r.version, **recipe_stats(session, r)} for r in session.scalars(select(TryRecipeRow))],
         "sources": sources,
         "editions": editions,
         "delivery_alerts": [

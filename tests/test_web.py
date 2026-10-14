@@ -143,7 +143,8 @@ def test_pages_render(client, seeded, db_path):
     home = client.get("/")
     assert home.status_code == 200
     assert "2026-10-12" in home.text
-    assert "WebTool" in home.text
+    assert "重要必看" in home.text and "最新发现" in home.text
+    assert "WebTool" not in home.text  # Published editions remain archives until feed refresh.
 
     edition = client.get("/d/2026-10-12")
     assert edition.status_code == 200
@@ -168,11 +169,11 @@ def test_pages_render(client, seeded, db_path):
 
 
 def test_card_user_story_rendered(client, seeded):
-    home = client.get("/")
+    home = client.get("/d/2026-10-12")
     assert "用户故事：" in home.text
     assert "用 WebTool0 处理一次日常任务" in home.text
 
-    en = client.get("/?lang=en")
+    en = client.get("/d/2026-10-12?lang=en")
     assert "User story:" in en.text
     assert "run WebTool0 on one daily task" in en.text
     assert "用户故事" not in en.text
@@ -181,12 +182,12 @@ def test_card_user_story_rendered(client, seeded):
 def test_language_switch_cookie_and_purity(client, seeded):
     default = client.get("/")
     assert 'lang="zh-CN"' in default.text
-    assert "今日精选" in default.text or "最近一期" in default.text
+    assert "重要必看" in default.text and "最新发现" in default.text
     assert "Why it matters" not in default.text
 
     switched = client.get("/?lang=en")
     assert 'lang="en"' in switched.text
-    assert "Latest edition" in switched.text or "Today's picks" in switched.text
+    assert "Must read" in switched.text and "New discoveries" in switched.text
     assert "用户故事" not in switched.text
     assert "为什么值得看" not in switched.text
     assert switched.cookies.get("vr_lang") == "en"
@@ -196,7 +197,7 @@ def test_language_switch_cookie_and_purity(client, seeded):
 
     back = client.get("/?lang=zh")
     assert 'lang="zh-CN"' in back.text
-    assert "用户故事：" in back.text
+    assert "重要必看" in back.text
 
 
 def test_edition_api_language(client, seeded):

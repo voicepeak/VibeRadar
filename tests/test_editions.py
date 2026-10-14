@@ -152,7 +152,10 @@ def test_static_export_matches_public_page_structure(session, temp_settings):
         temp_settings.public_dir / "d" / f"{EDITION_DATE.isoformat()}.html"
     ).read_text(encoding="utf-8")
 
-    for html in (index_html, edition_html):
+    assert "重要必看" in index_html and "全部动态" in index_html
+    assert 'action="/refresh"' in index_html
+    assert "/admin/llm" not in index_html
+    for html in (edition_html,):
         assert "重点推荐" in html
         assert "评价与报错" in html
         assert 'data-action="interest"' not in html

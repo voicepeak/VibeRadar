@@ -62,6 +62,9 @@ def test_parser_commands_exist():
     assert args.llm == "none"
     args = parser.parse_args(["llm", "stage", "--stage", "enrich", "--tier", "strong"])
     assert args.llm_command == "stage" and args.tier == "strong"
+    assert parser.parse_args(["feed", "refresh", "--no-llm", "--json"]).no_llm
+    assert parser.parse_args(["recipe", "verify", "--file", "x.yaml", "--by", "curator", "--device", "win11"]).recipe_command == "verify"
+    assert parser.parse_args(["try", "clean", "--all"]).all
 
 
 def test_llm_cli_set_use_stage_list_remove(tmp_path, monkeypatch, capsys):

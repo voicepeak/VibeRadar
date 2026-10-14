@@ -82,6 +82,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="command", required=True)
 
+    p = sub.add_parser("feed", help="滚动动态刷新与状态")
+    p.add_argument("feed_command", choices=["refresh", "status"])
+    p.add_argument("--no-llm", action="store_true", help="只采集重排，不分析")
+    p.add_argument("--json", action="store_true")
     p = sub.add_parser("recipe", help="导入冻结配方、记录人工核验与查看状态")
     p.add_argument("recipe_command", choices=["import", "verify", "list"])
     p.add_argument("--file")
@@ -965,6 +969,25 @@ def _cmd_llm(args, settings: Settings) -> int:
     return EXIT_ERROR
 
 
+def _cmd_feed(args, settings):
+    from viberadar.pipeline.feed import feed_view, refresh_feed, run_view
+    from viberadar.store.models import RefreshRunRow
+    factory = get_session_factory(settings.db_path)
+    if args.feed_command == "refresh":
+        result = refresh_feed(factory, settings, no_llm=args.no_llm)
+        with factory() as s:
+            run = s.get(RefreshRunRow, result.get("run_id")) if result.get("run_id") else None
+            if run:
+                result = run_view(run)
+    else:
+        with factory() as s:
+            v = feed_view(s, settings)
+            result = {k: v[k] for k in ("last_run", "total", "pending")}
+            result["sections"] = {x["key"]: len(x["items"]) for x in v["sections"]}
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return EXIT_ERROR if result.get("status") == "failed" else EXIT_OK
+
+
 def _cmd_recipe(args, settings):
     import yaml
     from sqlalchemy import select
@@ -1032,6 +1055,7 @@ def _cmd_try(args, settings):
 
 
 COMMANDS = {
+    "feed": _cmd_feed,
     "recipe": _cmd_recipe,
     "try": _cmd_try,
     "ingest": _cmd_ingest,

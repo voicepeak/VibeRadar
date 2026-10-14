@@ -525,6 +525,14 @@ def _latest_heat(session: Session, raw: RawItemRow) -> float | None:
     return None
 
 
+@dataclass
+class _MeasuredVelocity:
+    # Raw units/hour can exceed 1; only the later percentile is a bounded SignalValue.
+    value: float
+    missing: bool = False
+    reason: str | None = None
+
+
 def _build_source_maps(
     session: Session,
     entries: list[ResolvedItem],
@@ -539,6 +547,10 @@ def _build_source_maps(
     """
     rubric = settings.rubric
     source_keys = {e.raw_item.source_key for e in entries}
+    if entries:
+        source_keys.update(session.scalars(select(RawItemRow.source_key).join(
+            ProductSourceRow, ProductSourceRow.raw_item_id == RawItemRow.id).where(
+            ProductSourceRow.product_id.in_([e.product.id for e in entries]))))
     maps: dict[str, dict[str, dict[str, SignalValue]]] = {}
     for source_key in source_keys:
         raws = _raws_first_fetched_between(session, source_key, window_start, cutoff)
@@ -563,7 +575,7 @@ def _build_source_maps(
             ):
                 heat_by_product[product_id] = percentile
 
-        velocity_raw: dict[str, SignalValue] = {}
+        velocity_raw: dict[str, _MeasuredVelocity] = {}
         seen_products: set[str] = set()
         for raw in raws:
             product_id = product_by_raw.get(raw.id)
@@ -581,13 +593,13 @@ def _build_source_maps(
                 points, min_hours=float(rubric.velocity.get("min_hours", 1))
             )
             if velocity is None:
-                velocity_raw[product_id] = SignalValue(
+                velocity_raw[product_id] = _MeasuredVelocity(
                     value=float(rubric.velocity.get("missing_default", 0.5)),
                     missing=True,
                     reason="速度样本不足（<2 快照或 <1 小时）",
                 )
             else:
-                velocity_raw[product_id] = SignalValue(value=velocity)
+                velocity_raw[product_id] = _MeasuredVelocity(value=velocity)
 
         velocity_by_product = _percentile_within(velocity_raw, rubric.velocity)
         maps[source_key] = {"heat": heat_by_product, "velocity": velocity_by_product}
@@ -634,10 +646,11 @@ def _final_score(
     velocity_by_product = source_map.get("velocity", {})
     per_source_heat: dict[str, SignalValue] = {}
     per_source_velocity: dict[str, SignalValue] = {}
-    if entry.product.id in heat_by_product:
-        per_source_heat[entry.raw_item.source_key] = heat_by_product[entry.product.id]
-    if entry.product.id in velocity_by_product:
-        per_source_velocity[entry.raw_item.source_key] = velocity_by_product[entry.product.id]
+    for source_key, mapping in source_maps.items():
+        if entry.product.id in mapping.get("heat", {}):
+            per_source_heat[source_key] = mapping["heat"][entry.product.id]
+        if entry.product.id in mapping.get("velocity", {}):
+            per_source_velocity[source_key] = mapping["velocity"][entry.product.id]
     source_signal = best_across_sources(per_source_heat)
     velocity_signal = best_across_sources(per_source_velocity)
     novelty = novelty_value(
@@ -719,6 +732,8 @@ def _raw_products(session: Session, raw_ids: list[str]) -> dict[str, str]:
 
 
 def _distinct_sources(entry: ResolvedItem) -> set[str]:
+    if getattr(entry, "source_keys", None):
+        return entry.source_keys
     metadata = entry.raw_item.metadata_json or {}
     sources = {"manual"} if metadata.get("manual") else set()
     sources.add(entry.raw_item.source_key)
@@ -767,7 +782,9 @@ def _assess_interest(
         response = llm.chat_json(
             prompt_name="interest",
             system="",
-            payload={"item_id": entry.raw_item.id},
+            payload={"item_id": entry.raw_item.id, "title": entry.raw_item.title,
+                     "description": (entry.raw_item.description or "")[:2500],
+                     "guide": outcome.enrichment.model_dump(mode="json") if outcome and outcome.enrichment else None},
             model="fast",
             stage="interest",
             max_output_tokens=800,
@@ -910,6 +927,7 @@ def _passes_gates(
     outcome: EnrichOutcome | None,
     settings: Settings,
     cutoff: datetime,
+    ignore_republish: bool = False,
 ) -> tuple[bool, list[str]]:
     """入选判定（宽进策略，quality_gates.mode=soft 为默认）。
 
@@ -965,7 +983,7 @@ def _passes_gates(
         if entry.product.id in (rel.product_id_a, rel.product_id_b):
             blocked.append("存在未决实体关系")
             break
-    if was_published_recently(
+    if not ignore_republish and was_published_recently(
         session,
         entry.product.id,
         cutoff,

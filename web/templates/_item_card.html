@@ -6,6 +6,9 @@
     <span class="pill">{{ item.category_label }}</span>
     <span class="pill mode-pill mode-{{ item.mode }}">{{ item.mode | mode_label }}</span>
     {% if item.time_promise %}<span class="pill">{{ item.time_promise }}</span>{% endif %}
+    {% if item.is_new %}<span class="pill new-pill">{{ t('feed.new') }}</span>{% endif %}
+    {% if item.heat_label %}<span class="heat-label">{{ item.heat_label }}</span>{% endif %}
+    {% if item.trial %}<a class="pill trial-pill" href="/try/{{ item.slug }}">{{ item.trial.label }}</a>{% endif %}
   </p>
   <h3 class="item-title">
     {% if item.slug %}<a href="/p/{{ item.slug }}">{{ item.name }}</a>{% else %}{{ item.name }}{% endif %}
@@ -14,32 +17,33 @@
   {% if item.user_story %}
     <p class="user-story"><span class="story-label">{{ t('card.user_story') }}</span>{{ item.user_story }}</p>
   {% endif %}
-  {% if not compact %}
+  <p class="access">{{ item.access_text }}{% if item.mobile_note %} · {{ item.mobile_note }}{% endif %}</p>
+  <details class="card-details">
+    <summary>{{ t('card.details') }}</summary>
     <p class="why">{{ t('card.why') }}{{ item.why_interesting }}</p>
     {% if item.steps %}
       <ol class="steps">
         {% for step in item.steps %}<li>{{ step }}</li>{% endfor %}
       </ol>
     {% endif %}
-  {% endif %}
-  <p class="access">{{ item.access_text }}{% if item.mobile_note %} · {{ item.mobile_note }}{% endif %}</p>
   <p class="source-links">
     {% for source in item.source_links %}
       <a href="{{ source.url }}" rel="noopener noreferrer">{{ source.label }}</a>
     {% endfor %}
-    {% if item.links and item.links.project %}
-      <a class="primary-link" href="/go/{{ item.links.project }}" rel="noopener noreferrer">{{ t('card.try') }}</a>
-    {% endif %}
     <span class="muted">{{ t('card.checked', date=item.checked_at | fmt_date) }}</span>
     <span class="muted">{{ item.evidence_status | evidence_label }}</span>
   </p>
+  </details>
   <div class="actions" role="group" aria-label="{{ t('card.feedback') }}">
-    <button type="button" class="btn" data-action="tried" data-item-id="{{ item.id }}">{{ t('card.tried') }}</button>
+    {% if not item.is_feed %}<button type="button" class="btn" data-action="tried" data-item-id="{{ item.id }}">{{ t('card.tried') }}</button>{% endif %}
     <button type="button" class="btn btn-save" data-action="save" data-item-id="{{ item.id }}"
             data-product-id="{{ item.product_id }}" data-slug="{{ item.slug }}"
             data-name="{{ item.name }}" data-one-liner="{{ item.one_liner }}"
-            data-edition-date="{{ item.edition_date }}">{{ t('card.save') }}</button>
-    <a class="btn btn-link" href="/feedback/{{ item.id }}">{{ t('card.feedback') }}</a>
+            data-edition-date="{{ item.edition_date }}" data-feed="{{ 'true' if item.is_feed else 'false' }}">{{ t('card.save') }}</button>
+    {% if item.is_feed %}<a class="btn btn-link" href="/p/{{ item.slug }}">{{ t('card.product') }} ↗</a>
+    {% else %}<a class="btn btn-link" href="/feedback/{{ item.id }}">{{ t('card.feedback') }}</a>{% endif %}
+    {% if item.trial and item.trial.tier in ['container', 'compose'] %}<a class="btn btn-primary" href="/try/{{ item.slug }}">{{ item.trial.label }} ↗</a>
+    {% elif item.links and item.links.project %}<a class="btn btn-primary" href="/go/{{ item.links.project }}" rel="noopener noreferrer">{{ t('card.try') }} ↗</a>{% endif %}
   </div>
   <p class="feedback-status muted" data-status-for="{{ item.id }}" aria-live="polite"></p>
 </article>

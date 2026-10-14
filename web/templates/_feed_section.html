@@ -1,0 +1,15 @@
+{% from "_item_card.html" import item_card with context %}
+{% for section in feed.sections %}
+<section class="feed-section" id="{{ section.key }}" aria-labelledby="title-{{ section.key }}">
+  <div class="section-heading">
+    <h2 id="title-{{ section.key }}">{{ t('feed.' + section.key) }}</h2>
+    <span class="section-count">{{ section['items'] | length }}</span>
+    <p>{{ t('feed.' + section.key + '.note') }}</p>
+  </div>
+  {% for item in section['items'] %}{{ item_card(item, settings, compact=True) }}{% endfor %}
+  {% if not section['items'] %}<p class="section-empty">{{ t('feed.section_empty') }}</p>{% endif %}
+</section>
+{% endfor %}
+{% if feed.next_cursor %}
+  <a class="btn load-more" href="/?cursor={{ feed.next_cursor }}&amp;lang={{ locale }}#all" data-feed-next="{{ feed.next_cursor }}">{{ t('feed.more') }} ↓</a>
+{% endif %}

@@ -47,34 +47,12 @@ def export_edition(session: Session, edition: EditionRow, settings: Settings) ->
 
 
 def export_index(session: Session, settings: Settings) -> Path:
-    edition = latest_published(session)
+    from viberadar.pipeline.feed import feed_view
     out_dir = settings.public_dir
     out_dir.mkdir(parents=True, exist_ok=True)
-    today = date.today()
-    if edition is None:
-        html = _env().get_template("index.html").render(
-            settings=settings,
-            edition=None,
-            today=today,
-            intro_only=True,
-            recent=[],
-            request=None,
-            locale="zh",
-        )
-    else:
-        view = build_edition_view(session, edition)
-        html = _env().get_template("index.html").render(
-            settings=settings,
-            edition=view,
-            today=today,
-            is_today=edition.date == today,
-            intro_only=False,
-            highlights=highlights(view),
-            sections=group_sections(view),
-            recent=recent_editions(session, exclude_id=edition.id, limit=7),
-            request=None,
-            locale="zh",
-        )
+    html = _env().get_template("index.html").render(
+        settings=settings, feed=feed_view(session, settings),
+        recent=recent_editions(session, limit=7), request=None, locale="zh")
     path = out_dir / "index.html"
     path.write_text(html, encoding="utf-8")
     return path

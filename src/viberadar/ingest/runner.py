@@ -67,6 +67,7 @@ def run_source(
     settings: Settings | None = None,
     transport=None,
     manual_entries: list[dict] | None = None,
+    release_transactions: bool = False,
 ) -> IngestReport:
     from viberadar.store import repo_ingest
 
@@ -92,6 +93,8 @@ def run_source(
     watermark = repo_ingest.get_watermark(session, source_key)
     adapter = build_adapter(source_def.adapter, source_def.config, transport, manual_entries)
     started = utcnow()
+    if release_transactions:
+        session.commit()  # Feed polling must remain available during slow source requests.
     outcome = adapter.fetch(since, until, watermark)
     created = updated = 0
     for item in outcome.items:
@@ -128,11 +131,15 @@ def run_all_sources(
     only: list[str] | None = None,
     transports: dict | None = None,
     manual_entries: list[dict] | None = None,
+    release_transactions: bool = False,
+    on_source=None,
 ) -> list[IngestReport]:
     settings = settings or get_settings()
     keys = only or [s.key for s in settings.sources.enabled()]
     reports: list[IngestReport] = []
     for key in keys:
+        if on_source:
+            on_source()
         try:
             report = run_source(
                 session,
@@ -142,6 +149,7 @@ def run_all_sources(
                 settings=settings,
                 transport=(transports or {}).get(key),
                 manual_entries=manual_entries if key == "manual" else None,
+                release_transactions=release_transactions,
             )
         except Exception as exc:  # noqa: BLE001 —— 单源失败不中止其余源
             report = IngestReport(
@@ -150,6 +158,10 @@ def run_all_sources(
                 errors=[f"{type(exc).__name__}: {exc}"],
             )
         reports.append(report)
+        if release_transactions:
+            session.commit()
+        if on_source:
+            on_source()
     return reports
 
 

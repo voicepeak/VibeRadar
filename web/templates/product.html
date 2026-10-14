@@ -18,6 +18,20 @@
     <p class="muted small">{{ t('product.first_seen', date=product.first_seen_at | fmt_date) }}</p>
   </section>
 
+  {% if trial_label %}
+  <section class="card trial-entry">
+    <h2>{{ trial_label.label }}</h2>
+    <p class="muted">{% if trial_stats.median_ready_seconds %}{{ t('trial.median', seconds=trial_stats.median_ready_seconds | round | int) }}{% else %}{{ t('trial.unmeasured') }}{% endif %}</p>
+    <a class="btn btn-primary" href="/try/{{ product.slug }}">{{ t('trial.open') }} ↗</a>
+  </section>
+  {% endif %}
+  {% if copy %}<section class="card product-guide">
+    <h2>{{ t('card.details') }}</h2><p>{{ copy.why_interesting }}</p>
+    <p class="user-story">{{ copy.user_story }}</p>
+    <ol class="steps">{% for step in copy.steps %}<li>{{ step }}</li>{% endfor %}</ol>
+    <p class="access">{{ copy.access_text }} · {{ copy.mobile_note }}</p>
+    <p class="source-links">{% for source in copy.source_links %}<a href="{{ source.url }}" rel="noopener noreferrer">{{ source.label }}</a>{% endfor %}</p>
+  </section>{% endif %}
   <h2 class="section-title">{{ t('product.history') }}</h2>
   {% if history %}
     <ul class="history-list">

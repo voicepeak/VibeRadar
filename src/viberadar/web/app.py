@@ -20,6 +20,7 @@ from viberadar.store import get_engine, get_session_factory, init_db
 from .routes_api import router as api_router
 from .routes_llm import router as llm_router
 from .routes_public import router as public_router
+from .routes_feed import router as feed_router
 from .routes_trial import router as trial_router
 from .templating import templates
 
@@ -118,6 +119,7 @@ def create_app(db_path: str | Path | None = None, settings: Settings | None = No
     app.include_router(public_router)
     app.include_router(api_router)
     app.include_router(llm_router)
+    app.include_router(feed_router)
     app.include_router(trial_router)
     return app
 

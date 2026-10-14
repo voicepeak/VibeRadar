@@ -59,7 +59,7 @@
       slug: btn.dataset.slug,
       name: btn.dataset.name,
       one_liner: btn.dataset.oneLiner,
-      edition_item_id: btn.dataset.itemId,
+      edition_item_id: btn.dataset.feed === "true" ? null : btn.dataset.itemId,
       edition_date: btn.dataset.editionDate,
       saved_at: new Date().toISOString(),
     };
@@ -173,7 +173,7 @@
     const seen = new Set();
     cards.forEach((card) => {
       const itemId = card.dataset.itemId;
-      if (!itemId || seen.has(itemId)) return;
+      if (!itemId || itemId.startsWith("fed_") || seen.has(itemId)) return;
       seen.add(itemId);
       fetch(`/api/v1/feedback/${itemId}`, { headers: { Accept: "application/json" } })
         .then((res) => (res.ok ? res.json() : null))
@@ -199,7 +199,7 @@
   };
 
   const trackViews = () => {
-    const editionEl = document.querySelector("[data-edition-id]");
+    const editionEl = document.querySelector("[data-edition-id]:not([data-edition-id=''])");
     if (editionEl) {
       const editionId = editionEl.dataset.editionId;
       let timer = setTimeout(() => {
@@ -213,7 +213,7 @@
         }
       });
     }
-    const cards = document.querySelectorAll("[data-item-id]");
+    const cards = document.querySelectorAll(".item-card:not([data-edition-id=''])");
     if (!cards.length || !("IntersectionObserver" in window)) return;
     const appeared = new Map();
     const observer = new IntersectionObserver(

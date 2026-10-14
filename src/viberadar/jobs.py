@@ -244,6 +244,18 @@ def run_due_jobs(
                 lambda: job_failure_check(session, settings, dry_run=dry_run),
             )
         session.commit()
+    from viberadar.pipeline.feed import refresh_feed
+    from viberadar.store.models import RefreshRunRow
+    from sqlalchemy import select
+    with session_factory() as s:
+        last = s.scalar(select(RefreshRunRow).order_by(RefreshRunRow.started_at.desc()).limit(1))
+        due = last is None or last.started_at <= now_utc - timedelta(minutes=20)
+    if due and not dry_run:
+        refresh_feed(session_factory, settings, trigger="scheduler", now=now_utc)
+        executed.append("feed_refresh")
+    from viberadar.trial.runtime import clean_trials
+    if not dry_run:
+        clean_trials(session_factory, settings)
     return executed
 
 
@@ -253,6 +265,12 @@ def build_scheduler(settings: Settings, session_factory: sessionmaker[Session]):
 
     scheduler = BlockingScheduler(timezone=settings.pipeline.tz)
     schedule = settings.pipeline
+    from viberadar.pipeline.feed import refresh_feed
+    from viberadar.trial.runtime import clean_trials
+    scheduler.add_job(lambda: refresh_feed(session_factory, settings, trigger="scheduler"),
+                      "interval", minutes=20, id="feed_refresh", max_instances=1, coalesce=True)
+    scheduler.add_job(lambda: clean_trials(session_factory, settings),
+                      "interval", minutes=1, id="trial_cleanup", max_instances=1, coalesce=True)
 
     def _safe(fn):  # noqa: ANN001, ANN202
         def wrapper(*args, **kwargs):  # noqa: ANN002, ANN003

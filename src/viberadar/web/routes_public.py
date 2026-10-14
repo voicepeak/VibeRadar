@@ -54,41 +54,20 @@ def _get_date_param(value: str) -> date | None:
 
 
 @router.get("/", response_class=HTMLResponse)
+@router.get("/home", response_class=HTMLResponse)
 def home(request: Request, session: Session = Depends(get_session)):
+    from viberadar.pipeline.feed import feed_view
     settings = request.app.state.settings
     locale = resolve_locale(request)
-    today = date.today()
-    edition = latest_published(session)
-    if edition is None:
-        response = render(
-            request,
-            "index.html",
-            {
-                "settings": settings,
-                "edition": None,
-                "today": today,
-                "intro_only": True,
-                "recent": [],
-            },
-        )
-    else:
-        view = _build_view(session, edition, locale)
-        response = render(
-            request,
-            "index.html",
-            {
-                "settings": settings,
-                "edition": view,
-                "today": today,
-                "is_today": edition.date == today,
-                "intro_only": False,
-                "highlights": highlights(view),
-                "sections": group_sections(view),
-                "recent": recent_editions(session, exclude_id=edition.id, limit=7),
-            },
-        )
-    actor = resolve_actor(request, settings, create=True)
-    ensure_cookie(request, response, settings, actor)
+    try:
+        feed = feed_view(session, settings, locale, request.query_params.get("cursor"))
+    except ValueError:
+        from fastapi import HTTPException
+        raise HTTPException(400, "Invalid or expired cursor")
+    response = render(request, "index.html", {"settings": settings, "feed": feed,
+                      "refresh_feedback": request.query_params.get("refresh") == "cooldown",
+                      "recent": recent_editions(session, limit=7)})
+    ensure_cookie(request, response, settings, resolve_actor(request, settings, create=True))
     return response
 
 
@@ -173,7 +152,12 @@ def product_page(slug: str, request: Request, session: Session = Depends(get_ses
             }
         )
 
-    source = dict(history_rows[0][0].content_json or {}) if history_rows else {}
+    from viberadar.pipeline.feed import feed_view
+    from viberadar.store.models import FeedItemRow
+    from viberadar.trial.recipes import recipe_for_slug, recipe_label, recipe_stats
+    feed_row = session.scalar(select(FeedItemRow).where(FeedItemRow.product_id == product.id, FeedItemRow.state == "active"))
+    recipe = recipe_for_slug(session, slug)
+    source = dict(feed_row.content_json) if feed_row else dict(history_rows[0][0].content_json or {}) if history_rows else {}
     source.setdefault("name", product.name)
     labels = settings.taxonomy.labels(locale)
     category_key = product.category or source.get("category") or ""
@@ -191,6 +175,9 @@ def product_page(slug: str, request: Request, session: Session = Depends(get_ses
             "summary": summary,
             "history": history,
             "category_label": category_label,
+            "copy": localize_card_content(source, locale, category_label) if source else None,
+            "trial_label": recipe_label(recipe, locale),
+            "trial_stats": recipe_stats(session, recipe) if recipe else None,
         },
     )
 
