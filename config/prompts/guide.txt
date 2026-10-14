@@ -10,3 +10,7 @@
 未经实际体验记录不能写“已实测”或“30秒完成安装”。
 输入：product、event、access_evidence、verification、evidence[]。
 输出JSON必须符合Enrichment schema；无需额外文本。
+仅输出 one_liner、why_interesting、user_story、en、mode、steps、access、claims 字段。
+steps 必须为对象数组：[{"text":"中文操作步骤"}]，不能是字符串数组；en.steps 才是英文字符串数组。
+access 使用输入 access_evidence 的字段和类型，checked_at 必须保留输入 ISO 时间。
+one_liner 连同产品名、空格和英文字符在内总长度不超过40字符。不要输出 type 或其他格式标记字段。

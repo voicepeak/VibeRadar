@@ -52,6 +52,47 @@ def _save_profile(settings, price: bool = True) -> None:
     )
 
 
+def test_projected_call_cost_refused_before_network(session_factory, temp_settings):
+    _save_profile(temp_settings)
+    temp_settings.pricing.budget["daily_hard_cap_usd"] = .001
+    seen = []
+    gateway = LLMGateway(session_factory, temp_settings, provider="config", transport=_transport(seen=seen))
+    result = gateway.raw_chat(system="", user="hello", model="fast", max_output_tokens=1600)
+    assert not result.ok and "上限" in result.error and result.request_count == 0
+    assert not seen
+    with session_factory() as s:
+        assert repo_ops.daily_cost(s) == 0
+
+
+def test_parallel_model_calls_reserve_global_budget(session_factory, temp_settings):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    _save_profile(temp_settings)
+    temp_settings.pricing.budget["daily_hard_cap_usd"] = .004
+    started, release = threading.Event(), threading.Event()
+    seen = []
+    def handler(request):
+        seen.append(request)
+        started.set()
+        assert release.wait(5)
+        return httpx.Response(200, json={"choices":[{"message":{"content":"OK"}}],
+            "usage":{"prompt_tokens":10,"completion_tokens":1}})
+    gateway = LLMGateway(session_factory,temp_settings,provider="config",transport=httpx.MockTransport(handler))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(gateway.raw_chat, system="", user="first", json_mode=False, max_output_tokens=500)
+        try:
+            assert started.wait(3)
+            second = gateway.raw_chat(system="",user="second",json_mode=False,max_output_tokens=500)
+            assert not second.ok and "上限" in second.error
+            assert len(seen) == 1
+        finally:
+            release.set()
+        assert first.result(timeout=3).ok
+    with session_factory() as s:
+        assert Decimal(0) < repo_ops.daily_cost(s) < Decimal(".004")
+
+
+
 def test_gateway_config_provider_calls_model_and_records_cost(
     session_factory, temp_settings
 ):
@@ -183,6 +224,22 @@ def test_gateway_raw_chat_json_and_text(session_factory, temp_settings):
     )
     text_result = text_gateway.raw_chat(system="s", user="u2", model="fast", json_mode=False)
     assert text_result.ok and text_result.text == "纯文本回复"
+
+
+def test_task_json_normalizes_only_known_format_decorator(session_factory, temp_settings):
+    _save_profile(temp_settings)
+    gateway = LLMGateway(
+        session_factory, temp_settings, provider="config",
+        transport=_transport('{"type":"json_object","results":[],"unexpected":true}'),
+    )
+    task = gateway.chat_json(prompt_name="classify", system="s", payload={}, model="fast")
+    assert task.data == {"results": [], "unexpected": True}
+    cached = gateway.chat_json(prompt_name="classify", system="s", payload={}, model="fast")
+    assert cached.cached and cached.data == task.data
+    raw = gateway.raw_chat(system="s", user="u", model="fast", json_mode=True)
+    assert raw.data["type"] == "json_object"
+    other = gateway.chat_json(prompt_name="compose", system="s", payload={}, model="fast")
+    assert other.data["type"] == "json_object"
 
 
 def test_gateway_stage_mapping_overrides_tier(session_factory, temp_settings):

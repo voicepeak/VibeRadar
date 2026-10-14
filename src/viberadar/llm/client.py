@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -138,7 +139,7 @@ class LLMClient:
         payload: dict = {
             "model": model,
             "messages": [
-                {"role": "system", "content": system},
+                {"role": "system", "content": f"{system}\n{JSON_INSTRUCTION}" if json_mode else system},
                 {"role": "user", "content": user},
             ],
             "temperature": temperature,
@@ -146,6 +147,12 @@ class LLMClient:
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
+        # The current official Flash model defaults to high thinking effort. Small
+        # structured tasks otherwise spend their entire output budget on reasoning.
+        # Keep provider-specific parameters away from other OpenAI-compatible services.
+        if (urlparse(self.profile.base_url).hostname == "api.deepseek.com" and
+            model == "deepseek-flash" and (json_mode or max_tokens <= 64)):
+            payload["thinking"] = {"type": "disabled"}
         headers = {"Authorization": f"Bearer {self.profile.api_key}"}
         result = self._post(self._url("/v1/chat/completions", "/chat/completions"), payload, headers)
         if not result.ok:
@@ -160,6 +167,9 @@ class LLMClient:
         usage = data.get("usage") or {}
         in_tokens = int(usage.get("prompt_tokens") or estimate_tokens(system + user))
         out_tokens = int(usage.get("completion_tokens") or estimate_tokens(content or ""))
+        if data["choices"][0].get("finish_reason") == "length" or not content:
+            return CompletionResult(ok=False, error="模型输出为空或被 token 限制截断", model=model,
+                                    input_tokens=in_tokens, output_tokens=out_tokens)
         parsed: dict | None = None
         if json_mode:
             try:

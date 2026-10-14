@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import Field, field_validator
+from .trial import TryTier
 
 from .common import (
     SCHEMA_VERSION,
@@ -145,6 +146,7 @@ class CardCopyEn(StrictModel):
 
 
 class Enrichment(StrictModel):
+    try_tier: "TryTier | None" = None
     one_liner: str                      # 中文一句话描述 ≤40 字
     why_interesting: str
     user_story: str = ""                # 中文具体用户故事（谁在什么场景用它得到什么）

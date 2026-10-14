@@ -5,12 +5,16 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import httpx
+
 from viberadar.contracts import AccessInfo, TryMode
 from viberadar.pipeline.enrich import (
     PageContent,
     clip_summary,
     extract_install_command,
     template_enrichment,
+    fetch_page,
+    infer_access,
 )
 
 CHECKED_AT = datetime(2026, 10, 12, 0, 0, tzinfo=timezone.utc)
@@ -42,6 +46,26 @@ def _raw(description: str = "面向编码 agent 的上下文快照与回滚工�
         target_url=ENTRY,
         source_url=ENTRY,
     )
+
+
+def test_repository_access_uses_readme_not_host_navigation():
+    html = '<nav>Sign in Pricing $9 iOS App Store</nav><article class="markdown-body entry-content"><h1>Demo</h1><p>Open source MIT license</p><p>pip install demo</p><p>Various scenarios</p></article>'
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, text=html))
+    page = fetch_page(ENTRY, transport=transport)
+    assert page.text == 'Demo Open source MIT license pip install demo Various scenarios'
+    access = infer_access(page, _raw())
+    assert access.pricing.value == 'free'
+    assert access.login_required is False and 'iOS' not in access.platforms
+    assert access.self_host_required is True
+
+
+def test_repository_without_readme_does_not_infer_navigation_requirements():
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, text='<nav>Sign in Pricing $9 iOS App Store</nav>'))
+    page = fetch_page(ENTRY, transport=transport)
+    assert not page.text and not page.chunks
+    access = infer_access(page, _raw())
+    assert access.pricing.value == 'unknown' and access.login_required is False
+    assert not access.platforms
 
 
 # ---------- clip_summary ----------

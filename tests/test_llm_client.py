@@ -5,6 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import httpx
+import json
 
 from viberadar.llm import LLMClient, LLMPrice, LLMProfile, extract_json_object
 
@@ -41,6 +42,28 @@ def test_openai_json_mode_parses_fenced_content():
     assert result.ok and result.data == {"results": [{"item_id": "i1"}]}
     assert result.input_tokens == 10 and result.output_tokens == 5
     assert result.priced is False and result.cost_usd == Decimal("0")
+
+
+def test_official_flash_short_json_disables_thinking_and_requests_json():
+    seen = []
+    client = LLMClient(_profile(base_url="https://api.deepseek.com"),
+                       transport=_openai_transport('{"dims": {}}', seen=seen))
+    assert client.chat_json(system="", user="score this", model="deepseek-flash", max_output_tokens=800).ok
+    body = json.loads(seen[0].content)
+    assert body["thinking"] == {"type": "disabled"}
+    assert "JSON" in body["messages"][0]["content"]
+    other_seen = []
+    other = LLMClient(_profile(), transport=_openai_transport('{"ok":true}', seen=other_seen))
+    other.chat_json(system="", user="u", model="deepseek-flash")
+    assert "thinking" not in json.loads(other_seen[0].content)
+
+
+def test_empty_truncated_model_output_is_not_success():
+    client = LLMClient(_profile(), transport=httpx.MockTransport(lambda request: httpx.Response(200,
+        json={"choices": [{"message": {"content": ""}, "finish_reason": "length"}],
+              "usage": {"prompt_tokens": 12, "completion_tokens": 16}})))
+    result = client.chat_text(system="s", user="u", model="m-fast", max_output_tokens=16)
+    assert not result.ok and result.output_tokens == 16 and "token" in result.error
 
 
 def test_openai_url_join_when_base_lacks_suffix():

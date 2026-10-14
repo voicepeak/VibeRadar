@@ -56,6 +56,7 @@ class EventPayload(StrictModel):
 
 
 class FeedbackStatePayload(StrictModel):
+    trial_session_id: str | None = None
     tried: bool | None = None                     # 独立于评价
     rating_state: RatingState | None = None       # 单选最新态；null 表示撤回
     failure_reason: FailureReason | None = None

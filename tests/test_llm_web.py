@@ -5,6 +5,15 @@ from __future__ import annotations
 import json
 
 import httpx
+import pytest
+from fastapi.testclient import TestClient
+
+
+@pytest.fixture
+def admin_client(app):
+    with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 5000),
+                    headers={"Origin": "http://127.0.0.1"}) as c:
+        yield c
 
 
 def _enable(monkeypatch, token: str = "sekret-token") -> None:
@@ -67,7 +76,8 @@ def test_trusted_local_detection():
     assert not _trusted_local(fake("127.0.0.1", {"x-forwarded-for": "1.2.3.4"}))
 
 
-def test_admin_config_fully_open_no_token(client):
+def test_admin_config_fully_open_no_token(admin_client):
+    client = admin_client
     """设置页与管理 API 不依赖任何令牌/环境变量，直接可用。"""
     resp = client.get("/api/admin/llm/config")
     assert resp.status_code == 200
@@ -109,11 +119,13 @@ def test_settings_link_in_live_nav(client):
     assert "设置" in home.text
 
 
-def test_admin_page_renders(client, monkeypatch):
+def test_admin_page_renders(admin_client, monkeypatch):
+    client = admin_client
     _enable(monkeypatch)
     resp = client.get("/admin/llm")
     assert resp.status_code == 200
-    assert "LLM 配置窗口" in resp.text
+    assert "模型设置" in resp.text
+    assert 'class="admin-advanced"' in resp.text
     assert "noindex" in resp.text
     assert "管理令牌" not in resp.text
 
@@ -230,3 +242,20 @@ def test_admin_delete_profile(client, monkeypatch, temp_settings):
     resp = client.delete("/api/admin/llm/profiles/work", headers=HEADERS)
     assert resp.status_code == 200
     assert client.get("/api/admin/llm/config", headers=HEADERS).json()["profiles"] == []
+
+
+def test_model_settings_reject_container_lan_and_rebinding(app, temp_settings):
+    for host, base in (("172.20.0.2", "http://172.20.0.1"), ("192.168.1.22", "http://192.168.1.10"),
+                       ("127.0.0.1", "http://untrusted.test")):
+        c = TestClient(app, base_url=base, client=(host, 5000), headers={"Origin": base})
+        assert c.get("/api/admin/llm/config").status_code == 403
+        assert c.put("/api/admin/llm/config", json={"profiles": []}).status_code == 403
+        assert c.post("/api/admin/llm/test", json={}).status_code == 403
+        assert c.get("/admin/llm").status_code == 403
+    assert not temp_settings.llm_config_path.exists()
+
+
+def test_local_model_settings_mutation_requires_same_origin(admin_client):
+    assert admin_client.put("/api/admin/llm/config", headers={"Origin":"http://untrusted.test"},
+                            json={"profiles":[]}).status_code == 403
+    assert admin_client.put("/api/admin/llm/config", json={"profiles":[]}).status_code == 200

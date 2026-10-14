@@ -1,7 +1,7 @@
 """LLM 配置窗口与服务端点。
 
-- /admin/llm：设置页；直接填写 API Key，无需令牌/环境变量（公网由部署边界/Caddy 屏蔽）。
-- /api/admin/llm/*：配置读写与连通性测试（同上，默认开放）。
+- /admin/llm：设置页；本机直连免令牌，容器/LAN 客户端需显式管理令牌。
+- /api/admin/llm/*：配置读写与连通性测试（同上，本机免令牌，远程需管理令牌）。
 - /api/llm/chat、/api/llm/status：供其他工具调用（本机直连免令牌；远程需 VIBERADAR_LLM_API_TOKEN）。
 
 密钥只写 data/llm.json；接口响应一律掩码。
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import secrets
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
@@ -29,7 +29,7 @@ from viberadar.llm.config import PROTOCOLS
 from viberadar.llm.gateway import BudgetExceeded
 from viberadar.store import repo_ops
 
-from .deps import client_ip, get_session
+from .deps import client_ip, get_session, same_origin
 from .templating import render
 
 router = APIRouter()
@@ -118,6 +118,20 @@ def _require_service_token(request: Request):
 # ---------- 管理页 ----------
 
 
+def _require_admin(request: Request):
+    """Keep local settings token-free; containers and LAN clients cannot edit host credentials."""
+    local = _trusted_local(request) and request.url.hostname in ("localhost", "127.0.0.1", "::1")
+    expected = request.app.state.settings.admin_token or ""
+    supplied = request.headers.get("x-admin-token", "")
+    if not supplied:
+        supplied = request.headers.get("authorization", "").removeprefix("Bearer ")
+    authorized = bool(expected and supplied and secrets.compare_digest(expected, supplied))
+    if not local and not authorized:
+        raise HTTPException(403, "Model settings are local only")
+    if request.method in {"POST", "PUT", "DELETE"} and not authorized and not same_origin(request):
+        raise HTTPException(403, "Same-origin request required")
+
+
 @router.get("/admin", include_in_schema=False)
 @router.get("/settings", include_in_schema=False)
 def admin_redirect():
@@ -126,7 +140,7 @@ def admin_redirect():
     return RedirectResponse("/admin/llm", status_code=302)
 
 
-@router.get("/admin/llm", include_in_schema=False)
+@router.get("/admin/llm", include_in_schema=False, dependencies=[Depends(_require_admin)])
 def admin_llm_page(request: Request):
     return render(
         request,
@@ -141,7 +155,7 @@ def admin_llm_page(request: Request):
 # ---------- 管理 API ----------
 
 
-@router.get("/api/admin/llm/config")
+@router.get("/api/admin/llm/config", dependencies=[Depends(_require_admin)])
 def get_llm_config(request: Request):
     settings = request.app.state.settings
     from viberadar.llm import load_store
@@ -163,7 +177,7 @@ def get_llm_config(request: Request):
     }
 
 
-@router.put("/api/admin/llm/config")
+@router.put("/api/admin/llm/config", dependencies=[Depends(_require_admin)])
 async def put_llm_config(request: Request, session: Session = Depends(get_session)):
     settings = request.app.state.settings
     from viberadar.llm import load_store
@@ -237,7 +251,7 @@ async def put_llm_config(request: Request, session: Session = Depends(get_sessio
     }
 
 
-@router.delete("/api/admin/llm/profiles/{name}")
+@router.delete("/api/admin/llm/profiles/{name}", dependencies=[Depends(_require_admin)])
 def delete_llm_profile(name: str, request: Request, session: Session = Depends(get_session)):
     settings = request.app.state.settings
     from viberadar.llm import load_store
@@ -256,7 +270,7 @@ def delete_llm_profile(name: str, request: Request, session: Session = Depends(g
     return {"ok": True, "active": config.active}
 
 
-@router.post("/api/admin/llm/test")
+@router.post("/api/admin/llm/test", dependencies=[Depends(_require_admin)])
 async def test_llm_profile(request: Request):
     settings = request.app.state.settings
     from viberadar.llm import load_store

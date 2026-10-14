@@ -55,7 +55,10 @@ from .feedback import (
 from .raw import MetricSnapshot, RawItem
 from .scoring import BonusItem, ScoreBreakdown, ScoreSignals, SignalValue
 
+from .trial import TryRecipe, TryTier, TrialSession
+
 __all__ = [
+    "TryRecipe", "TryTier", "TrialSession",
     "SCHEMA_VERSION",
     "AccessInfo",
     "BonusItem",

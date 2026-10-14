@@ -112,6 +112,7 @@ class EditionItemView(StrictModel):
     retracted: bool = False
     edition_date: date | None = None
     links: dict[str, str] = Field(default_factory=dict)
+    trial: dict | None = None
 
     @field_validator("checked_at")
     @classmethod

@@ -49,6 +49,86 @@ class UTCDateTime(TypeDecorator):
         return value.replace(tzinfo=timezone.utc)
 
 
+class FeedItemRow(Base):
+    __tablename__ = "feed_items"
+    id: Mapped[str] = mapped_column(String(48), primary_key=True)
+    product_id: Mapped[str] = mapped_column(ForeignKey("products.id"), unique=True)
+    event_id: Mapped[str] = mapped_column(ForeignKey("launch_events.id"))
+    raw_item_id: Mapped[str] = mapped_column(ForeignKey("raw_items.id"))
+    state: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    category: Mapped[str | None] = mapped_column(String(32))
+    spam: Mapped[float] = mapped_column(Numeric(6, 4), default=0)
+    interest: Mapped[float | None] = mapped_column(Numeric(6, 4))
+    final_score: Mapped[float] = mapped_column(Numeric(6, 4), default=0)
+    signals: Mapped[dict] = mapped_column(JSON, default=dict)
+    content_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    first_seen_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    event_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    analyzed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    rank_updated_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    must_read_until: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class RefreshRunRow(Base):
+    __tablename__ = "refresh_runs"
+    id: Mapped[str] = mapped_column(String(48), primary_key=True)
+    trigger: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(24), default="running")
+    since: Mapped[datetime] = mapped_column(UTCDateTime)
+    until: Mapped[datetime] = mapped_column(UTCDateTime)
+    new_raw: Mapped[int] = mapped_column(Integer, default=0)
+    new_items: Mapped[int] = mapped_column(Integer, default=0)
+    llm_calls: Mapped[int] = mapped_column(Integer, default=0)
+    budget_exhausted: Mapped[bool] = mapped_column(Boolean, default=False)
+    delivery: Mapped[str] = mapped_column(String(40), default="pending(TODO feishu)")
+    error: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class TryRecipeRow(Base):
+    __tablename__ = "try_recipes"
+    __table_args__ = (UniqueConstraint("slug", "version"),)
+    id: Mapped[str] = mapped_column(String(48), primary_key=True)
+    slug: Mapped[str] = mapped_column(String(160), index=True)
+    version: Mapped[str] = mapped_column(String(64))
+    content_json: Mapped[dict] = mapped_column(JSON)
+    verified_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    last_success_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
+class TrialSessionRow(Base):
+    __tablename__ = "trial_sessions"
+    id: Mapped[str] = mapped_column(String(48), primary_key=True)
+    recipe_id: Mapped[str] = mapped_column(ForeignKey("try_recipes.id"))
+    product_id: Mapped[str | None] = mapped_column(ForeignKey("products.id"))
+    edition_item_id: Mapped[str | None] = mapped_column(ForeignKey("edition_items.id"))
+    actor_hash: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default="preparing")
+    key_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
+    budget_usd: Mapped[Decimal] = mapped_column(Numeric(10, 6), default=Decimal("0.10"))
+    spent_usd: Mapped[Decimal] = mapped_column(Numeric(10, 6), default=Decimal("0"))
+    url: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    ready_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    error: Mapped[str | None] = mapped_column(Text)
+
+
+class TrialEventRow(Base):
+    __tablename__ = "trial_events"
+    id: Mapped[str] = mapped_column(String(48), primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("trial_sessions.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(24))
+    message: Mapped[str] = mapped_column(Text)
+    actor_hash: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
 class Source(Base):
     __tablename__ = "sources"
 

@@ -53,6 +53,7 @@ class LLMResult:
     repair_attempted: bool = False
     priced: bool = False
     latency_ms: int = 0
+    request_count: int = 0
 
 
 class LLMGateway:
@@ -214,6 +215,10 @@ class LLMGateway:
 
         resolved = resolved_key
         user = self._render_user(prompt_name, payload)
+        try:
+            reservation_id = self._reserve_completion(resolved, system, user, max_output_tokens, run_id, stage)
+        except BudgetExceeded as exc:
+            return LLMResult(ok=False, error=str(exc), model=resolved)
         assert self.client is not None
         completion = self.client.chat_json(
             system=system,
@@ -222,10 +227,15 @@ class LLMGateway:
             max_output_tokens=max_output_tokens,
             temperature=temperature,
         )
+        if (prompt_name in {"classify", "interest", "guide"} and completion.data and
+                completion.data.get("type") == "json_object"):
+            # Some compatible providers echo the transport format descriptor. It is
+            # not part of these task schemas; preserve every actual task field.
+            completion.data = {key: value for key, value in completion.data.items() if key != "type"}
         if completion.ok and completion.data is not None:
             self._store_cache(digest, resolved, completion.data)
         self._record_completion(
-            completion, run_id=run_id, stage=stage, resolved_model=resolved
+            completion, run_id=run_id, stage=stage, resolved_model=resolved, reservation_id=reservation_id
         )
         return LLMResult(
             ok=completion.ok,
@@ -238,6 +248,7 @@ class LLMGateway:
             output_tokens=completion.output_tokens,
             priced=completion.priced,
             latency_ms=completion.latency_ms,
+            request_count=completion.retries + 1,
         )
 
     def raw_chat(
@@ -283,6 +294,11 @@ class LLMGateway:
             return LLMResult(ok=True, data=mock_response, model=model)
 
         resolved = resolved_key
+        token_limit = max_output_tokens or (self.profile.max_output_tokens if self.profile else 1600)
+        try:
+            reservation_id = self._reserve_completion(resolved, system, user, token_limit, run_id, stage)
+        except BudgetExceeded as exc:
+            return LLMResult(ok=False, error=str(exc), model=resolved)
         assert self.client is not None
         completion = self.client.complete(
             system=system,
@@ -298,7 +314,7 @@ class LLMGateway:
                 output = {"__text__": completion.text or ""}
             self._store_cache(digest, resolved, output)
         self._record_completion(
-            completion, run_id=run_id, stage=stage, resolved_model=resolved
+            completion, run_id=run_id, stage=stage, resolved_model=resolved, reservation_id=reservation_id
         )
         return LLMResult(
             ok=completion.ok,
@@ -311,6 +327,7 @@ class LLMGateway:
             output_tokens=completion.output_tokens,
             priced=completion.priced,
             latency_ms=completion.latency_ms,
+            request_count=completion.retries + 1,
         )
 
     # ---------- 内部 ----------
@@ -337,8 +354,10 @@ class LLMGateway:
         run_id: str | None,
         stage: str | None,
         resolved_model: str,
+        reservation_id: str | None = None,
     ) -> None:
         if completion.input_tokens <= 0 and completion.output_tokens <= 0:
+            # A timeout may have been billed; keep the explicitly estimated reservation.
             return
         price, price_version = self._price_for(resolved_model)
         cost = completion.cost_usd
@@ -353,6 +372,17 @@ class LLMGateway:
                 resolved_model,
             )
         with self._session_factory() as session:
+            if reservation_id:
+                from viberadar.store.models import CostLedgerRow
+                row = session.get(CostLedgerRow, reservation_id)
+                row.input_tokens = completion.input_tokens
+                row.output_tokens = completion.output_tokens
+                row.retry = bool(completion.retries)
+                # A failed first request may have reached the provider before a retry succeeded.
+                row.cost_usd = cost + (row.cost_usd / 2 if completion.retries else Decimal(0))
+                row.estimated = bool(completion.retries)
+                session.commit()
+                return
             repo_ops.record_cost(
                 session,
                 model=resolved_model,
@@ -365,6 +395,23 @@ class LLMGateway:
                 stage=stage,
             )
             session.commit()
+
+    def _reserve_completion(self, model, system, user, output_limit, run_id, stage):
+        """Atomically reserve priced requests, including the client's possible second attempt."""
+        price, version = self._price_for(model)
+        if price is None:
+            return None  # Preserve the documented unpriced-model policy.
+        input_bound = len((system + user).encode("utf-8")) + 256
+        reserve = 2 * compute_cost(price, input_bound, 0, output_limit)
+        budget = self.settings.pricing.budget
+        with self._session_factory() as session:
+            if (repo_ops.daily_cost(session) + reserve > Decimal(str(budget.get("daily_hard_cap_usd", 2))) or
+                repo_ops.monthly_cost(session) + reserve > Decimal(str(budget.get("monthly_hard_cap_usd", 30)))):
+                raise BudgetExceeded("本次模型调用预留成本将超过日/月预算上限")
+            row = repo_ops.record_cost(session, model, 0, 0, 0, version, reserve,
+                                      run_id=run_id, stage=stage, estimated=True)
+            session.commit()
+            return row.id
 
     def _store_cache(self, digest: str, model: str, output: dict) -> None:
         with self._session_factory() as session:

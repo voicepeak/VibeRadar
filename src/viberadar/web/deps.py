@@ -115,11 +115,11 @@ def same_origin(request: Request) -> bool:
         from urllib.parse import urlparse
 
         parsed = urlparse(origin)
-        return parsed.netloc == host
+        return parsed.netloc == host and parsed.scheme == request.url.scheme
     referer = request.headers.get("referer")
     if referer:
         from urllib.parse import urlparse
 
         parsed = urlparse(referer)
-        return parsed.netloc == host
+        return parsed.netloc == host and parsed.scheme == request.url.scheme
     return False

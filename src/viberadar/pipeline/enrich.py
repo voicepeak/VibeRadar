@@ -15,6 +15,7 @@ from datetime import datetime
 from html.parser import HTMLParser
 
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from viberadar.contracts import (
     AccessInfo,
@@ -41,7 +42,7 @@ from viberadar.i18n import (
 from viberadar.llm import COMMON_SYSTEM, LLMGateway
 from viberadar.settings import Settings, get_settings
 from viberadar.store import repo_products
-from viberadar.store.models import ProductRow, RawItemRow
+from viberadar.store.models import EvidenceRow, ProductRow, RawItemRow
 
 from .normalize import github_owner_repo
 
@@ -71,9 +72,13 @@ class _TextExtractor(HTMLParser):
         self.text_parts: list[str] = []
         self._in_title = False
         self._in_script = False
+        self._in_readme = False
+        self.readme_chunks: list[str] = []
 
     def handle_starttag(self, tag: str, attrs) -> None:  # noqa: ANN001
         attrs_dict = dict(attrs)
+        if tag == "article" and "markdown-body" in attrs_dict.get("class", "").split():
+            self._in_readme = True
         if tag == "title":
             self._in_title = True
         elif tag in ("script", "style"):
@@ -90,6 +95,8 @@ class _TextExtractor(HTMLParser):
                 self.meta[key.lower()] = content
 
     def handle_endtag(self, tag: str) -> None:
+        if tag == "article":
+            self._in_readme = False
         if tag == "title":
             self._in_title = False
         elif tag in ("script", "style"):
@@ -101,6 +108,8 @@ class _TextExtractor(HTMLParser):
         text = data.strip()
         if not text:
             return
+        if self._in_readme:
+            self.readme_chunks.append(text)
         if self._in_title:
             self.title_parts.append(text)
         else:
@@ -171,6 +180,11 @@ def fetch_page(url: str, transport=None, resolve_dns: bool = False, timeout: flo
     except Exception:  # noqa: BLE001 —— HTML 残缺不视为失败
         pass
     text = parser.text
+    chunks = parser.chunks
+    # Repository navigation describes GitHub's services, not the discovered tool.
+    if github_owner_repo(response.url) is not None:
+        chunks = parser.readme_chunks
+        text = re.sub(r"\s+", " ", " ".join(chunks)).strip()
     haystack = f"{parser.title or ''} {text}".lower()
     login_wall = any(m in haystack for m in ("sign in to continue", "log in to continue", "请登录"))
     return PageContent(
@@ -181,7 +195,7 @@ def fetch_page(url: str, transport=None, resolve_dns: bool = False, timeout: flo
         title=parser.title,
         description=parser.meta.get("description") or parser.meta.get("og:description"),
         text=text[:20_000],
-        chunks=parser.chunks,
+        chunks=chunks,
         login_wall=login_wall,
     )
 
@@ -229,7 +243,8 @@ def infer_access(page: PageContent | None, raw: RawItemRow) -> AccessInfo:
 
     platforms = []
     for platform, markers in PLATFORM_MARKERS.items():
-        if any(m in combined for m in markers):
+        if any((bool(re.search(r"(?<![a-z0-9])" + re.escape(m) + r"(?![a-z0-9])", combined))
+                if m[0].isalnum() else m in combined) for m in markers):
             platforms.append(platform)
 
     # Web 入口存在不自动等于手机支持（PRD 4.4）；无实测记录时保持 unknown
@@ -356,12 +371,19 @@ def create_evidence(
     excerpt = _excerpt(text)
     if not excerpt:
         return None
+    digest = hashlib.sha256(excerpt.encode("utf-8")).hexdigest()
+    existing = session.scalar(select(EvidenceRow).where(
+        EvidenceRow.source_url == url, EvidenceRow.content_hash == digest))
+    if existing:
+        return Evidence(id=existing.id, raw_item_id=existing.raw_item_id,
+            source_url=existing.source_url, excerpt=existing.excerpt, content_hash=existing.content_hash,
+            retrieved_at=existing.retrieved_at, evidence_kind=existing.evidence_kind)
     evidence = Evidence(
         id=new_id("evd"),
         raw_item_id=raw.id,
         source_url=url,
         excerpt=excerpt,
-        content_hash=hashlib.sha256(excerpt.encode("utf-8")).hexdigest(),
+        content_hash=digest,
         retrieved_at=utcnow(),
         evidence_kind=kind,
     )
