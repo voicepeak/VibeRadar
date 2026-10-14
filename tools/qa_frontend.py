@@ -101,6 +101,7 @@ def fetch_edition(page, day: date, lang: str | None = None):  # noqa: ANN001
 
 def run(base: str) -> int:
     out = Path("logs") / "qa"
+    results.clear()
     out.mkdir(parents=True, exist_ok=True)
     chrome = find_chrome()
     launch_kw = {"executable_path": chrome} if chrome else {}
@@ -116,17 +117,29 @@ def run(base: str) -> int:
         goto(page, f"{base}/")
         page.wait_for_timeout(1200)
         body = page.inner_text("body")
-        check("首页：显示日期或最近一期", "20" in body)
+        check("首页：四个 Feed 栏目", all(x in body for x in ("重要必看", "近期火爆", "最新发现", "全部动态")))
         check(
             "首页：有内容或有说明",
-            ("重点推荐" in body) or ("暂无推荐" in body) or ("尚未发布" in body),
+            ("下一件好工具" in body) or ("暂时没有符合条件" in body),
         )
+        feed_data = page.evaluate("() => fetch('/api/v1/feed').then(r => r.json())")
+        cards = page.locator(".item-card")
+        ids = cards.evaluate_all("els => els.map(e => e.dataset.itemId)")
+        check("Feed：卡片去重", len(ids) == len(set(ids)))
+        check("Feed：刷新可无 JS 提交", page.locator('form[action="/refresh"] button[type="submit"]').count() == 1)
+        check("Feed：指南默认折叠", page.locator('.card-details[open]').count() == 0)
+        if cards.count():
+            page.locator('.card-details summary').first.click()
+            check("Feed：指南可展开", page.locator('.card-details[open]').count() == 1)
+            page.locator('.card-details summary').first.click()
+        page.locator('.archive-disclosure summary').click()
         if fetch_edition(page, YESTERDAY):
             check("首页：最近期号入口", "最近期号" in body)
-            check("首页：展示昨日期号", YESTERDAY.isoformat() in body)
+            check("首页：展示昨日期号", page.locator(f'.recent-list a[href="/d/{YESTERDAY.isoformat()}"]').count() == 1)
         else:
             print("SKIP 首页：最近期号（未准备昨日数据，先运行 tools/seed_acceptance.py）")
         assert_common(page, "首页桌面")
+        page.evaluate("window.scrollTo(0, 0)")
         page.screenshot(path=str(out / "01-home-desktop.png"), full_page=True)
 
         # ---- 语言切换（中/英纯语言检查）----
@@ -135,7 +148,7 @@ def run(base: str) -> int:
         en_body = page.inner_text("body")
         check(
             "英文模式：界面切换",
-            "Top picks" in en_body or "Latest edition" in en_body or "Today's picks" in en_body,
+            "Must read" in en_body and "New discoveries" in en_body,
         )
         check(
             "英文模式：无中文界面文案",
@@ -204,7 +217,7 @@ def run(base: str) -> int:
             check("常规刊：重点推荐 + 分组", "重点推荐" in body and ("工具与工作流" in body or "创意与实验" in body))
             check("常规刊：方案标签中文", "直接试玩" in body or "看演示" in body or "安装体验" in body)
             check("常规刊：门槛可见", "免费" in body and ("需登录" in body or "需本地安装" in body))
-            check("常规刊：往期不含更新期号", TODAY.isoformat() not in body)
+            check("常规刊：往期不含更新期号", page.locator(f'.recent-list a[href="/d/{TODAY.isoformat()}"]').count() == 0)
             page.screenshot(path=str(out / "03-yesterday-desktop.png"), full_page=True)
         else:
             print("SKIP 常规刊检查（未准备昨日常规刊，先运行 tools/seed_acceptance.py）")
@@ -267,7 +280,7 @@ def run(base: str) -> int:
         if source_edition and source_edition.get("items"):
             goto(page, f"{base}/d/{source_edition['date']}")
             page.wait_for_timeout(500)
-            page.click("button[data-action='save']")
+            page.locator("button[data-action='save']").first.click()
             page.wait_for_timeout(400)
             saved = page.evaluate("JSON.parse(localStorage.getItem('vr_saved') || '[]')")
             check("收藏：写入 localStorage", len(saved) == 1 and "product_id" in saved[0], saved)
@@ -311,6 +324,13 @@ def run(base: str) -> int:
         real_m = [e for e in m_errors if "Failed to load resource" not in e]
         check("移动端控制台无 JS 错误", not real_m, real_m[:3])
         mobile.close()
+        nojs = browser.new_context(viewport={"width": 360, "height": 760}, java_script_enabled=False)
+        np = nojs.new_page()
+        goto(np, base + "/")
+        check("无 JS：首页栏目可读", "重要必看" in np.inner_text("body"))
+        check("无 JS：刷新表单可用", np.locator('form[action="/refresh"]').count() == 1)
+        np.screenshot(path=str(out / "11-home-nojs.png"), full_page=True)
+        nojs.close()
         browser.close()
 
     failed = [r for r in results if not r["ok"]]
