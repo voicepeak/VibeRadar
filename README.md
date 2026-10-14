@@ -1,16 +1,45 @@
 # Vibe Radar
 
-面向中文 AI builder 的每日新品策展：从 HN / GitHub / 人工注入等发布事件中筛选值得体验的产品，
-生成有依据的中文体验指引，通过网页归档与飞书分发，并用匿名反馈改进精选。
+面向中文 AI builder 的滚动新品发现：从 HN / GitHub / 人工注入等发布事件中筛选值得体验的产品，
+生成有依据的体验指引，支持增量刷新、日期归档和经过核验配方的本地试玩。
 
-本仓库已按 PRD v1.3 落地 MVP 实现（Python 3.11+，单实例 SQLite 起步）。
+本仓库以 Python 3.11+、FastAPI 与单实例 SQLite 实现。首页已改为滚动 Feed；
+本地试玩工程已接入，真实基础容器及 MarkItDown 计时已完成；五个精选配方的完整验收仍待完成。
 产品规则、验收场景与口径以 [完整 PRD v1.3](PRD.md) 与 [首发用户故事](docs/product/USER_STORIES.md) 为准。
+
+## 滚动动态与本地试玩（2026-10-14）
+
+首页提供重要必看、近期火爆、最新发现与全部动态；刷新只分析新产品，卡片内容不覆盖，
+没有增量就不调用模型。调度器每 20 分钟刷新，手动刷新冷却 3 分钟。
+`/d/{date}` 和 RSS 保留为存档，收藏与模型设置继续可用。
+Feed 飞书发送为 TODO，页面明确显示“飞书：未实现”；旧日报分发仍保留。
+
+```powershell
+python -m viberadar feed refresh --json
+python -m viberadar feed refresh --no-llm --json  # 只采集重排，新产品等待分析
+python -m viberadar feed status
+python -m viberadar recipe list
+python -m viberadar try status
+```
+
+本地试玩只执行有核验人、核验时间、许可记录的冻结配方，通过 Docker 隔离运行，
+沙箱仅持虚拟模型密钥。未核验配方显示“本地指引”，准备时间仅引用实际成功会话。
+模型代理需要配置价格才能执行会话预算控制。
+本机已安装 Docker Desktop；MarkItDown 的真实模型刷新、自动导入本地配方包、交互转换和回收链路已跑通。
+五个精选配方端到端与全面隔离红队实测未完成，候选配方仍为 guided。
+具体命令、安全约束和验收边界见 [Feed 与试玩实现记录](docs/implementation/FEED_AND_TRIALS.md)。
 
 ## 文档入口
 
 | 文档 | 用途 |
 |---|---|
 | [完整 PRD v1.3](PRD.md) | 需求基线：模块规则、数据契约与 38 个验收场景 |
+| [Feed 与试玩实现记录](docs/implementation/FEED_AND_TRIALS.md) | #83 / #84 工程实现、运行方式与现场验收边界 |
+| [2026-10-14 验收报告](docs/implementation/ACCEPTANCE_2026-10-14.md) | 初次验收、追加实测与 #83 / #84 完成边界 |
+| [本地试玩真实计时](docs/implementation/TRIAL_TIMING_2026-10-14.md) | Docker 安装、原始/预装启动对照，222 项回归及真实隔离探针 |
+| [发现到体验完整链路](docs/implementation/LOCAL_CHAIN_2026-10-14.md) | 真实模型刷新 16.308 秒、本地包导入启动 14.650 秒、交互与回收，232 项回归 |
+| [远端迭代交付记录](docs/implementation/REMOTE_ITERATIONS_2026-10-14.md) | 五步提交、各步验证与重要模块 issue |
+| [快速试玩候选准入建议](docs/product/FAST_TRIALS.md) | 按实测门槛筛选，区分首次准备和后续启动 |
 | [实现说明与验收对照](docs/implementation/IMPLEMENTATION.md) | 模块映射、E01–E33 覆盖状态、DoD 清单与已知边界 |
 | [首发用户故事](docs/product/USER_STORIES.md) | 9 个实际场景（含 Phase 2 试玩运行时）、用户价值、验收条件与试读观察方式 |
 | [试玩运行时提案（Phase 2）](docs/proposals/TRY_RUNTIME.md) | 一键试玩方向、安全边界与 P2A–P2C 阶段 |
@@ -28,7 +57,9 @@
 | M5.5 复核 | CLI 候选列表（≤60，同分类 ≤30）、通过/淘汰（带原因）/编辑/锁定/撤销、时长统计、保存不丢 |
 | M6 编制分发 | 冻结快照（短刊/空刊/降级）、受控 `/go/{link_id}` 跳转、飞书 webhook 与发送账本、网页/飞书渠道解耦、unknown 不盲目重发 |
 | M7 反馈 | 第一方匿名 ID、事件去重、试玩与评价分离的当前态（改选/撤回）、原因可选、内容报错队列与更正关联、限流 |
-| M8 存档 | `/`、`/d/{date}`、`/p/{slug}`、`/saved`、`/feedback/{id}`、`/rss.xml`、sitemap、静态导出；中/英双语切换（`?lang=` + cookie 记忆，任何语言模式不混排）；重点推荐→分组→最近期号三级结构；360px 移动可读、无 JS 可读正文 |
+| Feed | 产品唯一滚动池、增量分析、锁/冷却、预算短路、四栏目、SSR/异步刷新、20 分钟调度 |
+| Phase 2 试玩 | 冻结配方、隔离容器/声明式多服务、日志、虚拟 key、会话预算、TTL、手动试玩证据；第一方真实 Docker 链路已验证，五个精选配方待验收 |
+| M8 存档 | `/`、`/d/{date}`、`/p/{slug}`、`/saved`、`/feedback/{id}`、`/rss.xml`、sitemap、静态导出；中/英双语切换（`?lang=` + cookie 记忆，任何语言模式不混排）；日期页重点推荐→分组→最近期号；首页为滚动 Feed；360px 移动可读、无 JS 可读正文 |
 | M9 运维 | CLI（ingest/pipeline/review/freeze/publish/deliver/replay/eval/backup/restore/status/llm…）、调度器（07:30/08:35/09:00/09:05）、互斥锁、成本账本与预算上限、备份与隔离恢复 |
 
 ## 架构拓扑
@@ -86,7 +117,7 @@
 py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 
-# 2) 运行测试（159 项：契约/单元/集成/验收）
+# 2) 运行测试（契约/单元/集成/验收）
 .\.venv\Scripts\python.exe -m pytest tests -q
 
 # 3) 人工注入两条候选并跑一条端到端管线（离线 mock LLM）
@@ -98,7 +129,10 @@ py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m viberadar freeze --date (Get-Date -Format yyyy-MM-dd)
 .\.venv\Scripts\python.exe -m viberadar publish --date (Get-Date -Format yyyy-MM-dd) --now --skip-feishu
 
-# 5) 启动站点
+# 5) 将已有产品纳入滚动 Feed（复用富化；默认也采集新消息）
+.\.venv\Scripts\python.exe -m viberadar feed refresh
+
+# 6) 启动站点
 .\.venv\Scripts\python.exe -m viberadar serve --port 8000
 # 打开 http://127.0.0.1:8000
 ```
@@ -134,7 +168,7 @@ $env:VIBERADAR_LLM_PROVIDER="deepseek"; $env:DEEPSEEK_API_KEY="..."
   `POST /api/llm/chat`（本机直连免令牌；远程调用需 `VIBERADAR_LLM_API_TOKEN`，共享缓存、预算与成本账本）。
 - 预算与成本：延续日/月硬上限；档案 `price` 缺省时可回退 `config/pricing.yaml`，都未定价则成本记 0
   并在状态中标注，不阻塞调用。
-- 安全：设置页 `/admin/llm` 与 `/api/admin/*` 默认开放（本地工具），公网部署由 Caddy 统一 404
+- 安全：设置页 `/admin/llm` 与 `/api/admin/*` 本机直连免令牌；容器/LAN 客户端需显式管理令牌，写入有同源校验。公网部署由 Caddy 统一 404
   `/admin/*`、`/api/admin/*`；`/api/llm/*` 本机直连免令牌、远程需令牌。
 
 ```powershell
@@ -151,7 +185,7 @@ curl -X POST http://127.0.0.1:8000/api/llm/chat `
 
 ```powershell
 python tools/seed_acceptance.py   # 可选：昨天常规刊 6 条 + 前天空刊
-python tools/qa_frontend.py       # 44 项断言（含中/英切换与用户故事）+ 桌面/360px 截图（logs/qa/）
+python tools/qa_frontend.py       # Feed、归档与交互断言（含中/英切换与用户故事）+ 桌面/360px 截图（logs/qa/）
 ```
 
 服务已在运行即可执行；覆盖首页分级、短刊/空刊、产品页、反馈与收藏交互、404、移动端可用性。
@@ -170,7 +204,7 @@ python -m viberadar scheduler --once
 python -m viberadar status --date 2026-10-12
 ```
 
-调度时间线（PRD 5.1）：每 4 小时增量采集 → 07:30 截点冻结并跑管线 →
+Feed 每 20 分钟增量刷新；存档调度时间线（PRD 5.1）：每 4 小时增量采集 → 07:30 截点冻结并跑管线 →
 08:35 冻结编辑版本（应用人工修订层）→ 09:00 网页原子公开 + 静态导出 + 飞书投递 →
 09:05 失败告警与有界重试（unknown 只核对不盲发）。
 

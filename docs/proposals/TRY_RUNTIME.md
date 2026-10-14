@@ -154,3 +154,11 @@ verified: {by: curator, at: 2026-10-13, device: "win11+docker27"}
 | PRD 2.2 / M7 | "玩过了"增加可选会话证据口径 |
 | USER_STORIES | 新增 US-09：一键试玩（含失败、超时与清理场景） |
 | 附录 E | 新增验收编号（建议 E34–E38）：配方执行、隔离、超时降级、代理注入、清理 |
+
+
+## 2026-10-14 工程落地记录
+
+P2A/P2B 工程链路已加入仓库，含 CLI、Web、配方版本化、隔离约束、预算代理、日志、
+TTL 和会话确认。实际容器与五个精选配方验收因本机缺少 Docker Desktop 尚未完成。
+五个候选保持 guided，不宣称已核验或实测时间。
+见 [实现记录](../implementation/FEED_AND_TRIALS.md)；P2C 不在本轮实现范围内。
