@@ -384,6 +384,7 @@ def build_edition_view(
     for row in rows:
         content = dict(row.content_json or {})
         product = repo_products.get_product(session, row.product_id)
+        from viberadar.trial.recipes import recipe_for_slug, recipe_label
         category = content.get("category", "unknown")
         copy = localize_card_content(
             content, locale, labels.get(category, content.get("category_label", ""))
@@ -418,6 +419,7 @@ def build_edition_view(
                 retracted=bool(row.retracted),
                 edition_date=edition.date,
                 links=dict(content.get("links") or {}),
+                trial=recipe_label(recipe_for_slug(session, product.slug), locale) if product else None,
             )
         )
     from datetime import date as _date

@@ -338,6 +338,60 @@ _EVIDENCE_VALUES = ("human_tested", "doc_checked", "probe_tested", "failed", "un
 
 SOURCE_LABEL_MAP = {"来源": "source.origin", "项目/官网": "source.project"}
 
+MESSAGES["zh"].update({
+    "meta.title": "振感雷达 · 发现值得体验的 AI 新品",
+    "meta.description": "持续发现 AI 编程新品，了解亮点、门槛与最快体验方式。",
+    "nav.today": "发现", "footer.line1": "为 AI builder 持续发现值得体验的新品 · 收藏保存在本浏览器",
+    "card.details": "亮点与体验指南", "card.product": "查看详情",
+    "feed.title": "发现，下一件好工具。", "feed.eyebrow": "AI 新品 · 持续更新",
+    "feed.description": "从新发布的产品中，找到值得看、值得试的那一个。",
+    "feed.refresh": "刷新动态", "feed.sections": "动态栏目", "feed.total": "{count} 个产品",
+    "feed.must_read": "重要必看", "feed.trending": "近期火爆", "feed.latest": "最新发现", "feed.all": "全部动态",
+    "feed.must_read.note": "高分、有依据的精选", "feed.trending.note": "近 72 小时热度上升", "feed.latest.note": "近 48 小时新发布", "feed.all.note": "近 7 天的更多发现",
+    "feed.section_empty": "暂时没有符合条件的动态。", "feed.new": "新", "feed.more": "查看更多",
+    "feed.updated": "最后更新", "feed.feishu": "飞书：未实现", "feed.first": "准备好发现新产品了",
+    "feed.empty_title": "下一件好工具，正在路上", "feed.empty": "点击刷新开始采集。有新产品时，这里会显示它的亮点和体验方式。",
+    "feed.pending": "{count} 个产品等待分析", "feed.running": "刷新中…", "feed.no_changes": "无新增，动态已同步",
+    "feed.added": "新增 {count} 条", "feed.budget": "今日分析额度已用尽", "feed.failed": "刷新失败，请稍后重试", "feed.cooldown": "刚刚刷新过，稍后再试", "feed.wait": "刷新仍在进行，可稍后回来查看",
+    "trial.title": "本地试玩", "trial.session": "你的试玩工作区", "trial.recipe": "配方版本", "trial.preparation": "准备时间",
+    "trial.budget": "会话模型预算", "trial.unmeasured": "准备时间未验证", "trial.median": "实测中位数 {seconds} 秒",
+    "trial.isolation": "在独立容器中启动，真实模型密钥保留在本机。准备完成后可打开应用，结束时停止会话；两小时后自动回收。",
+    "trial.local_only": "请在运行 Vibe Radar 的本机打开此页面启动试玩。", "trial.docker_missing": "尚未连接 Docker Desktop。请安装并启动 Docker Desktop，再刷新此页。",
+    "trial.engine_stopped": "Docker Desktop 尚未启动，点击一键启动时会自动启动并准备环境。",
+    "trial.guided": "当前提供本地指引。配方核验通过后才会开放一键启动。", "trial.open": "查看试玩方式", "trial.open_app": "打开应用",
+    "trial.logs": "启动日志", "trial.copy": "复制日志", "trial.copied": "已复制", "trial.copy_failed": "复制失败，请选中日志手动复制",
+    "trial.stop": "停止会话", "trial.expires": "自动回收时间", "trial.elapsed": "已用时 {seconds} 秒",
+    "trial.evidence_note": "启动成功不代表已经试玩。“玩过了”需要你手动确认，并独立记录会话证据。",
+    "trial.no_js": "重新加载页面即可查看最新状态和日志。", "trial.confirmed": "已记录试玩确认", "trial.failed": "操作失败，请稍后重试",
+    "trial.state.preparing": "准备环境", "trial.state.installing": "安装与启动", "trial.state.ready": "已就绪", "trial.state.failed": "启动失败", "trial.state.timeout": "启动超时", "trial.state.stopped": "已停止",
+})
+MESSAGES["en"].update({
+    "meta.title": "Vibe Radar · Discover AI tools worth trying", "meta.description": "Fresh AI builder tools, useful context, and a faster path to trying them.",
+    "nav.today": "Discover", "footer.line1": "Fresh discoveries for AI builders · Bookmarks stay in this browser",
+    "card.details": "Highlights & try guide", "card.product": "View details",
+    "feed.title": "Find your next good tool.", "feed.eyebrow": "AI discoveries · Always updating",
+    "feed.description": "Newly launched products. A clear reason to look, and a quick way to try.",
+    "feed.refresh": "Refresh feed", "feed.sections": "Feed sections", "feed.total": "{count} products",
+    "feed.must_read": "Must read", "feed.trending": "Trending", "feed.latest": "New discoveries", "feed.all": "All activity",
+    "feed.must_read.note": "High scores, backed by evidence", "feed.trending.note": "Gaining momentum in the last 72 hours", "feed.latest.note": "Published in the last 48 hours", "feed.all.note": "More discoveries from the last 7 days",
+    "feed.section_empty": "No matching activity yet.", "feed.new": "New", "feed.more": "Load more", "feed.updated": "Updated",
+    "feed.feishu": "Feishu: not implemented", "feed.first": "Ready to discover something new",
+    "feed.empty_title": "Your next good tool is on its way", "feed.empty": "Refresh to collect new products. Their highlights and try guides will appear here.",
+    "feed.pending": "{count} products awaiting analysis", "feed.running": "Refreshing…", "feed.no_changes": "No new products. Feed is up to date.",
+    "feed.added": "{count} new products", "feed.budget": "Today's analysis budget is exhausted", "feed.failed": "Refresh failed. Please try later.", "feed.cooldown": "Recently refreshed. Please try later.", "feed.wait": "Refresh is still running. Check back shortly.",
+    "trial.title": "Local trial", "trial.session": "Your trial workspace", "trial.recipe": "Recipe version", "trial.preparation": "Preparation",
+    "trial.budget": "Session model budget", "trial.unmeasured": "Preparation time unverified", "trial.median": "Measured median: {seconds}s",
+    "trial.isolation": "Starts in an isolated container. Real model keys stay on this machine. Open the app when ready and stop the session when finished. Sessions expire after two hours.",
+    "trial.local_only": "Open this page on the machine running Vibe Radar to start a trial.", "trial.docker_missing": "Docker Desktop is unavailable. Install and start it, then reload this page.",
+    "trial.engine_stopped": "Docker Desktop is installed. Launching a trial will start the engine and prepare the environment.",
+    "trial.guided": "Use the setup guide for now. One-click launch requires a verified recipe.", "trial.open": "View trial options", "trial.open_app": "Open application",
+    "trial.logs": "Startup logs", "trial.copy": "Copy logs", "trial.copied": "Copied", "trial.copy_failed": "Select the logs and copy them manually",
+    "trial.stop": "Stop session", "trial.expires": "Automatically reclaimed at", "trial.elapsed": "Elapsed: {seconds}s",
+    "trial.evidence_note": "A ready application is not a completed trial. Confirm trying it manually; session evidence is recorded separately.",
+    "trial.no_js": "Reload this page for the latest status and logs.", "trial.confirmed": "Trial confirmation recorded", "trial.failed": "Action failed. Please try again later.",
+    "trial.state.preparing": "Preparing", "trial.state.installing": "Installing & starting", "trial.state.ready": "Ready", "trial.state.failed": "Failed", "trial.state.timeout": "Timed out", "trial.state.stopped": "Stopped",
+})
+
 JS_KEYS = [
     "card.save",
     "card.saved",
@@ -357,6 +411,9 @@ JS_KEYS = [
     "feedback.issue_ok",
     "feedback.issue_failed",
 ]
+
+
+JS_KEYS += [key for key in MESSAGES["zh"] if key.startswith(("feed.", "trial."))]
 
 
 def normalize_locale(value: str | None) -> str:

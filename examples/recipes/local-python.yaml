@@ -1,0 +1,16 @@
+# First-party smoke fixture. Human verification is deliberately unset.
+slug: local-python
+version: draft-v1
+tier: container
+image: python:3.13-slim
+run:
+  - python -m http.server 3000 --bind 0.0.0.0
+port: 3000
+healthcheck: /
+timeout_minutes: 2
+ttl_minutes: 120
+budget_usd: 0.10
+license_checked: Project-local smoke fixture; no third-party application
+verified: null
+guide:
+  - This fixture tests container startup and reclamation without installing a third-party repository.

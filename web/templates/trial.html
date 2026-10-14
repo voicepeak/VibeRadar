@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ t('trial.title') }} · Vibe Radar{% endblock %}
+{% block content %}
+<section class="edition-head trial-head">
+  <p class="eyebrow">{{ t('trial.title') }}</p><h1>{{ t('trial.session') }}</h1>
+  <p><span id="trial-state" class="pill">{{ t('trial.state.' + trial.status) }}</span> <span id="trial-elapsed" class="muted" data-started="{{ trial.started_at }}"></span></p>
+  <p class="muted small">{{ t('trial.expires') }} {{ trial.expires_at | fmt_datetime }} · {{ t('trial.budget') }} ${{ trial.budget_usd }}</p>
+</section>
+<section id="trial-terminal" data-session-id="{{ trial.id }}" data-status="{{ trial.status }}">
+  <div class="terminal-head"><span>{{ t('trial.logs') }}</span><button type="button" class="btn" id="copy-logs">{{ t('trial.copy') }}</button></div>
+  <pre id="trial-logs" tabindex="0" aria-label="{{ t('trial.logs') }}">{% for e in trial.events %}[{{ e.kind }}] {{ e.message }}
+{% endfor %}</pre>
+  <p id="trial-error" class="notice" {% if not trial.error %}hidden{% endif %}>{{ trial.error or '' }}</p>
+  <div class="trial-actions">
+    <a id="trial-open" class="btn btn-primary" {% if trial.url %}href="{{ trial.url }}"{% else %}hidden{% endif %} target="_blank" rel="noopener noreferrer">{{ t('trial.open_app') }} ↗</a>
+    <button id="trial-tried" class="btn" type="button" {% if not trial.ready_at %}hidden{% endif %} {% if not trial.evidence_available %}disabled{% endif %}>{{ t('card.tried') }}</button>
+    <form method="post" action="/trial/{{ trial.id }}/stop"><button class="btn" type="submit">{{ t('trial.stop') }}</button></form>
+  </div><p id="trial-feedback-status" role="status"></p>
+  <p class="muted small">{{ t('trial.evidence_note') }}</p>
+</section>
+<noscript><p class="muted">{{ t('trial.no_js') }} <a href="/trial/{{ trial.id }}">{{ t('feed.refresh') }}</a></p></noscript>
+{% endblock %}

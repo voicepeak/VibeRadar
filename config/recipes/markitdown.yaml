@@ -1,0 +1,11 @@
+slug: markitdown
+version: draft-2026-10-14
+tier: guided
+entry_url: https://github.com/microsoft/markitdown
+verified: null
+license_checked: ''
+guide:
+- 打开 MarkItDown 的官方仓库，按照当前 README 选择适合本机的安装方式。
+- 使用独立环境；先核查许可与依赖，再选择固定的仓库提交或镜像版本。
+- 若需要模型，请先配置 Vibe Radar 档案，并在核验配方中声明代理地址与虚拟密钥变量。
+- 完成 Docker 非 root、只读镜像、断网与停止回收实测后，以新版本提交可执行配方。

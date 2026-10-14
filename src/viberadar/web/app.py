@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import time
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -18,6 +20,7 @@ from viberadar.store import get_engine, get_session_factory, init_db
 from .routes_api import router as api_router
 from .routes_llm import router as llm_router
 from .routes_public import router as public_router
+from .routes_trial import router as trial_router
 from .templating import templates
 
 logger = logging.getLogger("viberadar.web")
@@ -33,12 +36,29 @@ def create_app(db_path: str | Path | None = None, settings: Settings | None = No
     init_db(engine)
     session_factory = get_session_factory(db_path)
 
+    @asynccontextmanager
+    async def lifespan(app):
+        from viberadar.trial.runtime import clean_trials
+        async def cleanup_loop():
+            while True:
+                try:
+                    await asyncio.to_thread(clean_trials, session_factory, settings)
+                except Exception:
+                    logger.exception("Trial cleanup failed")
+                await asyncio.sleep(30)
+        task = asyncio.create_task(cleanup_loop())
+        yield
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
     app = FastAPI(
         title="Vibe Radar",
         version=__version__,
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
     app.state.settings = settings
     app.state.session_factory = session_factory
@@ -98,6 +118,7 @@ def create_app(db_path: str | Path | None = None, settings: Settings | None = No
     app.include_router(public_router)
     app.include_router(api_router)
     app.include_router(llm_router)
+    app.include_router(trial_router)
     return app
 
 

@@ -82,6 +82,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="command", required=True)
 
+    p = sub.add_parser("recipe", help="导入冻结配方、记录人工核验与查看状态")
+    p.add_argument("recipe_command", choices=["import", "verify", "list"])
+    p.add_argument("--file")
+    p.add_argument("--by")
+    p.add_argument("--device")
+    p.add_argument("--json", action="store_true")
+    p = sub.add_parser("try", help="运行核验配方；try status/stop/clean")
+    p.add_argument("target")
+    p.add_argument("--session")
+    p.add_argument("--all", action="store_true", help="clean 时清理所有会话")
+    p.add_argument("--json", action="store_true")
+
     p = sub.add_parser("ingest", help="按源采集原始条目")
     p.add_argument("--source", action="append", default=None, help="源 key，可重复")
     p.add_argument("--since", default=None, help="ISO 时间")
@@ -953,7 +965,75 @@ def _cmd_llm(args, settings: Settings) -> int:
     return EXIT_ERROR
 
 
+def _cmd_recipe(args, settings):
+    import yaml
+    from sqlalchemy import select
+    from viberadar.contracts.trial import TryRecipe, Verification
+    from viberadar.contracts import utcnow
+    from viberadar.store.models import TryRecipeRow
+    from viberadar.trial.recipes import register_recipe, recipe_stats, recipe_label
+    factory = get_session_factory(settings.db_path)
+    with factory() as s:
+        if args.recipe_command in ("import", "verify"):
+            if not args.file:
+                raise ValueError("--file is required")
+            recipe = TryRecipe(**yaml.safe_load(Path(args.file).read_text(encoding="utf-8")))
+            if args.recipe_command == "verify":
+                if not args.by or not args.device or not recipe.license_checked:
+                    raise ValueError("verify requires --by, --device and license_checked in the recipe")
+                recipe.verified = Verification(by=args.by, device=args.device, at=utcnow())
+            row = register_recipe(s, recipe)
+            s.commit()
+            print(json.dumps({"slug": row.slug, "version": row.version, "tier": recipe_label(row)}, ensure_ascii=False))
+        else:
+            print(json.dumps([{"slug": r.slug, "version": r.version, "tier": recipe_label(r), **recipe_stats(s,r)}
+                              for r in s.scalars(select(TryRecipeRow))], ensure_ascii=False, indent=2))
+    return EXIT_OK
+
+
+def _cmd_try(args, settings):
+    import time
+    from sqlalchemy import select
+    from viberadar.trial.runtime import create_trial, execute_trial, session_view, stop_trial, clean_trials
+    from viberadar.store.models import TrialSessionRow
+    factory = get_session_factory(settings.db_path)
+    if args.target == "clean":
+        print(json.dumps({"cleaned": clean_trials(factory, settings, all_sessions=args.all)}))
+    elif args.target == "stop":
+        if not args.session:
+            raise ValueError("try stop requires --session")
+        stop_trial(factory, settings, args.session)
+        print("stopped " + args.session)
+    elif args.target == "status":
+        with factory() as s:
+            rows = list(s.scalars(select(TrialSessionRow).order_by(TrialSessionRow.started_at.desc()).limit(20)))
+            print(json.dumps([session_view(s, r) for r in rows if not args.session or r.id == args.session], ensure_ascii=False, indent=2))
+    else:
+        clean_trials(factory, settings)
+        session_id, token = create_trial(factory, settings, args.target)
+        thread = None
+        if token:
+            import threading
+            thread = threading.Thread(target=execute_trial, args=(factory, settings, session_id, token), daemon=True)
+            thread.start()
+        after = None
+        while True:
+            with factory() as s:
+                view = session_view(s, s.get(TrialSessionRow, session_id), after)
+            for e in view["events"]:
+                if not args.json:
+                    print(f"[{e['kind']}] {e['message']}", flush=True)
+                after = e["id"]
+            if view["status"] in ("ready", "failed", "timeout", "stopped"):
+                print(json.dumps(view, ensure_ascii=False, indent=2))
+                return EXIT_OK if view["status"] == "ready" else EXIT_ERROR
+            time.sleep(1)
+    return EXIT_OK
+
+
 COMMANDS = {
+    "recipe": _cmd_recipe,
+    "try": _cmd_try,
     "ingest": _cmd_ingest,
     "pipeline": _cmd_pipeline,
     "review": _cmd_review,

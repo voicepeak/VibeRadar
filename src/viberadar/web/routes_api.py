@@ -196,6 +196,19 @@ async def put_feedback(
     if "tried" not in payload.model_fields_set and "rating_state" not in payload.model_fields_set:
         return _error(request, "invalid_payload", "至少提交试玩状态或评价", 400)
     assert actor.actor_hash is not None
+    if payload.trial_session_id:
+        from viberadar.store.models import TrialSessionRow, TrialEventRow
+        from viberadar.contracts import utcnow, new_id
+        from viberadar.trial.runtime import has_trial_evidence
+        trial = session.get(TrialSessionRow, payload.trial_session_id)
+        if (payload.tried is not True or not trial or trial.actor_hash != actor.actor_hash or
+            trial.product_id != item.product_id or not has_trial_evidence(trial)):
+            return _error(request, "invalid_trial_evidence", "试玩会话证据与条目或当前读者不匹配", 400)
+        existing = session.scalar(select(TrialEventRow).where(TrialEventRow.session_id == trial.id,
+            TrialEventRow.kind == "tried", TrialEventRow.actor_hash == actor.actor_hash))
+        if not existing:
+            session.add(TrialEventRow(id=new_id("tev"), session_id=trial.id, kind="tried",
+                message="Reader attached session evidence to feedback", actor_hash=actor.actor_hash, created_at=utcnow()))
     view = set_feedback_state(session, actor.actor_hash, edition_item_id, payload)
     response = JSONResponse(view.model_dump(mode="json"))
     response.headers["Cache-Control"] = "private, no-store"

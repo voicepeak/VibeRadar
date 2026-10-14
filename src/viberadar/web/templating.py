@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
@@ -74,15 +75,19 @@ def product_status_label_filter(context, status: str) -> str:  # noqa: ANN001
 def fmt_date(value: date | datetime | None) -> str:
     if value is None:
         return ""
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if isinstance(value, datetime):
-        return value.astimezone().strftime("%Y-%m-%d %H:%M")
+        return value.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M")
     return value.isoformat()
 
 
 def fmt_datetime(value: datetime | None) -> str:
     if value is None:
         return ""
-    return value.astimezone().strftime("%Y-%m-%d %H:%M")
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return value.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M")
 
 
 templates.env.globals["t"] = t

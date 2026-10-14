@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ name }} · {{ t('trial.title') }}{% endblock %}
+{% block content %}
+<section class="edition-head trial-head">
+  <a class="back-link" href="/p/{{ slug }}">← {{ name }}</a>
+  <p class="eyebrow">{{ t('trial.title') }}</p>
+  <h1>{{ name }}</h1><p class="one-liner">{{ trial_label.label }}</p>
+</section>
+<section class="card">
+  <div class="trial-facts">
+    <div><span>{{ t('trial.recipe') }}</span><strong>{{ recipe.version }}</strong></div>
+    <div><span>{{ t('trial.preparation') }}</span><strong>{% if stats.median_ready_seconds %}{{ t('trial.median', seconds=stats.median_ready_seconds | round | int) }}{% else %}{{ t('trial.unmeasured') }}{% endif %}</strong></div>
+    <div><span>{{ t('trial.budget') }}</span><strong>${{ recipe.budget_usd }}</strong></div>
+  </div>
+  {% if trial_label.tier in ['container', 'compose'] %}<p>{{ t('trial.isolation') }}</p>{% endif %}
+  {% if not local %}<p class="notice">{{ t('trial.local_only') }}</p>
+  {% elif trial_label.tier in ['container', 'compose'] %}
+    {% if not runtime.available %}<p class="notice">{{ t('trial.engine_stopped') if runtime.installed else t('trial.docker_missing') }}</p>{% endif %}
+    <form method="post" action="/try/{{ slug }}" id="trial-launch" data-slug="{{ slug }}">
+      <button class="btn btn-primary" type="submit" {% if not runtime.available and not runtime.installed %}disabled{% endif %}>{{ trial_label.label }} ↗</button>
+    </form><p id="trial-launch-status" role="status" class="muted"></p>
+  {% else %}<p class="muted">{{ t('trial.guided') }}</p>{% endif %}
+  {% set guide = recipe.guide_en if locale == 'en' else recipe.guide %}
+  {% if guide %}<ol class="steps">{% for step in guide %}<li>{{ step }}</li>{% endfor %}</ol>
+  {% elif locale == 'en' and recipe.guide %}<p class="muted">English instructions are not available yet. Use the official project documentation.</p>{% endif %}
+  {% if recipe.entry_url %}<a class="btn" href="{{ recipe.entry_url }}" rel="noopener noreferrer">{{ t('product.entry') }} ↗</a>{% endif %}
+</section>
+{% endblock %}
